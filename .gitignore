@@ -1,0 +1,11 @@
+# Licenses and keys
+*.lic
+*.License 
+*.key 
+*.pem
+*installation-key*
+# VM and installer files
+*.iso
+*.img
+*.vdi
+*.ova
