@@ -7,16 +7,13 @@
 | Approved by      | Self (lab). In production: Senior Network Manager |
 | Date / window    | November 21, 2026|
 | Change type      | Normal |
-| Risk             | Medium, opening up system to outsiders, potentially attackers |
+| Risk             | Medium; The DC and CL gain internet access where a compromised machine could download tools or send data out or a misconfigured rule could break DNS or sign ins |
 | Systems affected | New VM: pfSense. AD-DC01 and AD-CL01: default gateway added. AD-DC01: DNS forwarder added |
 | Users affected   | None directly; all domain machines gain a controlled route out |
 
 ## Reason for change
-Allows for monitoring of all activity going to and from the network, allowing us to send logs to the SIEM and patch the DC.
+Allows only allowed traffic to leave, every block is logged and those deny logs become a souce for detection. This allows us to send logs to the SIEM and patch the DC.
 A direct line to the DC and SIEM would be a vulnerability that the pfsense gateway prevents
-<!-- hint: what does the lab lack that a real network has? Name two things this enables
-(e.g. patching the DC, sending logs to the SIEM) and why a firewall, not a direct
-connection, is the right way to do it. -->
 
 ## Current state (before), with evidence
 The lab is isolated: no default gateway on either machine.
