@@ -4,14 +4,16 @@
 |------------------|-------|
 | Requested by     | J. Saraza (IT) |
 | Implemented by   | J. Saraza |
-| Approved by      | Self (lab). In production: <!-- hint: who signs off on a network change that removes isolation? --> |
-| Date / window    | <!-- date and time you start --> |
+| Approved by      | Self (lab). In production: Senior Network Manager |
+| Date / window    | November 21, 2026|
 | Change type      | Normal |
-| Risk             | Medium <!-- hint: one line on why. What could reach the DC after this that couldn't before? --> |
+| Risk             | Medium, opening up system to outsiders, potentially attackers |
 | Systems affected | New VM: pfSense. AD-DC01 and AD-CL01: default gateway added. AD-DC01: DNS forwarder added |
 | Users affected   | None directly; all domain machines gain a controlled route out |
 
 ## Reason for change
+Allows for monitoring of all activity going to and from the network, allowing us to send logs to the SIEM and patch the DC.
+A direct line to the DC and SIEM would be a vulnerability that the pfsense gateway prevents
 <!-- hint: what does the lab lack that a real network has? Name two things this enables
 (e.g. patching the DC, sending logs to the SIEM) and why a firewall, not a direct
 connection, is the right way to do it. -->
@@ -26,6 +28,7 @@ The lab is isolated: no default gateway on either machine.
 `Test-NetConnection 1.1.1.1 -Port 443` on AD-CL01 fails:
 ![CL01 no route before](../../screenshots/phase1/cr-003-before-cl01-tnc.png)
 
+
 ## Implementation steps
 1. Confirm snapshots `pre-P3` exist for AD-DC01 and AD-CL01.
 2. Create the pfSense VM: 1 vCPU, 1 GB RAM, 8 GB disk. Adapter 1 Bridged (WAN), Adapter 2 Internal Network `adlab-net` (LAN).
@@ -36,7 +39,8 @@ The lab is isolated: no default gateway on either machine.
 7. pfSense LAN rules, top to bottom: allow DNS (53) and HTTPS (443) out; block everything else with logging on. (The rule for logs to Splunk, TCP 9997, is added in Phase 3.)
 
 ## Backout plan
-Rollback trigger: <!-- hint: what would you see that means "undo this"? e.g. sign-in or S: drive broken, DC unreachable from CL01 -->
+Rollback trigger: 
+Observable issues such as, but not limited to, S: drive missing, CL01 can't reach the DC, DNS stops resolving internal names.
 
 Steps:
 1. Remove the default gateway from AD-DC01 and AD-CL01.
