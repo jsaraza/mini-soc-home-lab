@@ -1,0 +1,1901 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="dark">
+<meta name="description" content="Interactive 2D and 3D model of a small home security operations lab: what is built, how a log reaches the SIEM, and which attacks are detected.">
+<link rel="icon" href="data:,">
+<title>Mini-SOC Home Lab</title>
+<style>
+:root{
+  --bg:#0d1218; --stage:#10161d; --surface:#141b24; --card:#1b2431; --line:#263140; --line-2:#3d4b5d;
+  --ink:#e8edf3; --ink-2:#b3bdc9; --ink-3:#8894a4;
+  /* one muted accent per zone: --z-<zone id> */
+  --z-lab:#7fb2df; --z-home:#d3ae6e; --z-internet:#ad9ee3; --z-other:#8894a4;
+  --signal:#e7917d;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+}
+*,*::before,*::after{box-sizing:border-box}
+[hidden]{display:none!important}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 var(--sans);-webkit-font-smoothing:antialiased}
+a{color:inherit;text-underline-offset:3px;text-decoration-thickness:1px}
+a:hover{color:#fff}
+button{font:inherit}
+:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.mono{font-family:var(--mono);font-size:.93em}
+h2{font-size:16px;font-weight:650;margin:0}
+.wrap{max-width:1560px;margin:0 auto;padding:0 24px}
+.skip{position:absolute;left:-9999px;top:8px;background:var(--card);color:var(--ink);padding:8px 12px;border-radius:8px;z-index:60}
+.skip:focus{left:12px}
+
+/* header */
+.top{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:20px 48px;align-items:end;padding:30px 0 22px}
+.top h1{margin:0 0 10px;font-size:clamp(24px,3.2vw,32px);line-height:1.12;font-weight:650;letter-spacing:-.015em}
+.summary{margin:0;max-width:68ch;color:var(--ink-2)}
+.by{margin:12px 0 0;font-size:14px;color:var(--ink-3)}
+.by .own{color:var(--ink-2)}
+.by a{color:var(--ink-2);margin-left:12px}
+.build{border-left:1px solid var(--line);padding-left:24px;min-width:280px}
+.build p{margin:0}
+.build .n{font-size:15px;color:var(--ink-2)}
+.build .n b{font-size:24px;font-weight:650;color:var(--ink);font-variant-numeric:tabular-nums;margin-right:3px}
+.pips{display:flex;gap:4px;margin:8px 0 7px;padding:0;list-style:none}
+.pip{width:24px;height:9px;border-radius:2px;border:1px dashed var(--line-2)}
+.pip.s-built{border:1px solid var(--ink-2);background:var(--ink-2)}
+.pip.s-in_progress{border:1px dashed var(--ink-2);box-shadow:inset 11px 0 0 var(--ink-3)}
+.build .sub{font-size:13px;color:var(--ink-3)}
+.build .sub span+span{margin-left:14px}
+.build .upd{font-size:13px;color:var(--ink-3);margin-top:6px}
+
+/* toolbar */
+.bar{display:flex;flex-wrap:wrap;gap:10px 10px;align-items:center;padding:14px 0 0;border-top:1px solid var(--line)}
+.seg{display:inline-flex;border:1px solid var(--line-2);border-radius:10px;padding:2px;background:var(--surface)}
+.seg button{font-size:13.5px;color:var(--ink-2);background:none;border:0;border-radius:8px;padding:6px 13px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--card);color:var(--ink);box-shadow:inset 0 0 0 1px var(--line-2)}
+.seg button[aria-disabled="true"]{color:var(--ink-3);cursor:default}
+.btn{font-size:13.5px;line-height:1.3;color:var(--ink);background:var(--surface);border:1px solid var(--line-2);border-radius:10px;padding:7px 12px;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
+.btn:hover{border-color:var(--ink-3)}
+.btn[aria-disabled="true"]{color:var(--ink-3);border-style:dashed;cursor:default}
+.btn[aria-disabled="true"]:hover{border-color:var(--line-2)}
+.btn.ghost{background:none;border-color:var(--line)}
+.btn:disabled{color:var(--ink-3);cursor:default}
+.spacer{flex:1 1 auto}
+.note{font-size:13px;color:var(--ink-3)}
+.lock{margin:10px 0 0;font-size:13.5px;color:var(--ink-2);border:1px dashed var(--line-2);border-radius:10px;padding:9px 12px}
+.tag{display:inline-block;font-size:11px;font-weight:600;line-height:1;padding:3px 7px 4px;border-radius:99px;border:1px dashed var(--line-2);color:var(--ink-2);white-space:nowrap}
+.tag.s-built{border:1px solid var(--ink-2);background:var(--ink-2);color:var(--bg)}
+.tag.s-in_progress{border:1px dashed var(--ink-2)}
+.tag.s-sim{border:1px solid var(--line-2);color:var(--ink-2)}
+
+/* stage */
+.stage{position:relative;margin-top:14px;border:1px solid var(--line);border-radius:14px;background:var(--stage);overflow:hidden}
+#v2 svg{display:block;width:100%;height:auto;margin:0 auto}
+#v2.tall svg{max-width:560px}
+#v3{position:relative;height:clamp(380px,70vh,780px);touch-action:none;cursor:grab;outline-offset:-4px;user-select:none;-webkit-user-select:none}
+#v3.dragging{cursor:grabbing}
+#v3 canvas{display:block;width:100%;height:100%}
+.l3wrap{position:absolute;inset:0;overflow:hidden;pointer-events:none}
+.l3{position:absolute;left:0;top:0;white-space:nowrap;pointer-events:none}
+.n3{pointer-events:auto;cursor:pointer;display:grid;gap:1px;justify-items:start;text-align:left;font-size:12.5px;line-height:1.25;padding:5px 9px 6px;border-radius:8px;background:rgba(13,18,24,.9);border:1px dashed var(--line-2);color:var(--ink-2)}
+.n3.s-built{border:1px solid var(--ac);background:rgba(27,36,49,.95)}
+.n3.s-in_progress{border:1px dashed var(--ac)}
+.n3 .r{display:flex;gap:8px;align-items:center}
+.n3 b{font-weight:650;font-size:13px;color:var(--ink)}
+.n3 .c{font-size:11.5px;color:var(--ink-3)}
+.n3 .x{font-size:11.5px;font-weight:650;color:var(--bg);background:var(--signal);border-radius:99px;padding:1px 7px;margin-top:3px}
+.n3.on{border-color:#fff;box-shadow:0 0 0 1px #fff}
+.n3.dim{opacity:.45}
+.n3.sel{box-shadow:0 0 0 2px var(--ink)}
+.z3{font-size:12.5px;font-weight:650}
+.f3{font:11px/1.2 var(--mono);color:var(--ink-2);background:rgba(13,18,24,.8);padding:2px 6px;border-radius:5px}
+.hint{position:absolute;left:12px;bottom:10px;margin:0;font-size:12px;color:var(--ink-3);pointer-events:none}
+
+/* walkthrough bar */
+.tour{position:sticky;bottom:12px;z-index:15;margin:12px 0 0;background:var(--card);border:1px solid var(--line-2);border-radius:12px;padding:12px 14px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 18px;align-items:center;box-shadow:0 8px 24px rgba(0,0,0,.45)}
+.thead{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;font-size:13px;color:var(--ink-2)}
+.thead b{color:var(--ink);font-weight:650}
+.tcount{margin-left:auto;color:var(--ink-3)}
+.tcap{margin:0;font-size:15px;line-height:1.45;min-height:2.9em}
+.tcap .where{font-weight:650}
+.tcap .fires{display:block;color:var(--signal);font-size:13.5px;margin-top:2px}
+.tbtns{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+
+/* detections */
+.dets{margin-top:26px}
+.dhead{display:flex;flex-wrap:wrap;gap:4px 14px;align-items:baseline;margin-bottom:10px}
+.dhead p{margin:0;font-size:13.5px;color:var(--ink-3)}
+.chips{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:10px}
+.chip{width:100%;height:100%;text-align:left;display:grid;gap:6px;align-content:start;padding:11px 12px 12px;border-radius:10px;border:1px dashed var(--line-2);background:none;color:var(--ink-2);cursor:pointer}
+.chip.s-built{border:1px solid var(--ink-3);background:var(--card);color:var(--ink)}
+.chip.s-in_progress{border:1px dashed var(--ink-3);background:rgba(27,36,49,.5)}
+.chip:hover,.chip.on{border-color:var(--ink)}
+.chip.on{box-shadow:0 0 0 1px var(--ink)}
+.chip.alert{border:1px solid var(--signal);box-shadow:0 0 0 1px var(--signal);color:var(--ink)}
+.chead{display:flex;align-items:center;gap:8px}
+.cid{font-weight:700;font-size:14px;color:var(--ink)}
+.copt{font-size:12px;color:var(--ink-3)}
+.chead .tag{margin-left:auto}
+.cname{font-size:14px;line-height:1.3}
+.catk{font-size:12px;color:var(--ink-3)}
+
+/* results, legend, footer */
+.results{margin-top:26px}
+.results dl{display:flex;flex-wrap:wrap;gap:10px;margin:10px 0 0}
+.results dl>div{border:1px solid var(--line-2);border-radius:10px;padding:10px 14px;min-width:150px}
+.results dt{font-size:12.5px;color:var(--ink-3)}
+.results dd{margin:2px 0 0;font-family:var(--mono);font-size:18px}
+.legend{margin-top:26px;padding-top:14px;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:8px 22px;font-size:13px;color:var(--ink-2)}
+.lg{display:inline-flex;align-items:center;gap:8px}
+.sw{width:22px;height:14px;border-radius:4px;border:1.5px dotted var(--ink-3)}
+.sw.s-built{border:1.5px solid var(--ink-2);background:var(--card)}
+.sw.s-in_progress{border:1.5px dashed var(--ink-2)}
+.lnk{width:26px;height:0;border-top:2px dotted var(--ink-3)}
+.lnk.s-built{border-top:2px solid var(--ink-2)}
+.xk{display:inline-grid;place-items:center;width:16px;height:16px;border:1.5px solid var(--signal);border-radius:50%;color:var(--signal);font-size:9px;line-height:1}
+.zd{width:10px;height:10px;border-radius:2px}
+.foot{margin:26px 0 44px;color:var(--ink-3);font-size:13.5px}
+.foot p{margin:0}
+
+/* side panel (bottom sheet on phones) */
+.panel{position:fixed;top:0;right:0;bottom:0;width:380px;max-width:100vw;z-index:30;background:var(--surface);border-left:1px solid var(--line-2);padding:22px 22px 28px;overflow:auto;overscroll-behavior:contain;box-shadow:-14px 0 34px rgba(0,0,0,.4);animation:pin .16s ease-out}
+@keyframes pin{from{transform:translateX(20px);opacity:0}to{transform:none;opacity:1}}
+@keyframes pup{from{transform:translateY(20px);opacity:0}to{transform:none;opacity:1}}
+.pclose{position:absolute;top:14px;right:14px;width:34px;height:34px;border-radius:8px;border:1px solid var(--line-2);background:none;color:var(--ink-2);cursor:pointer;font-size:17px;line-height:1}
+.pclose:hover{color:#fff;border-color:var(--ink-3)}
+.panel .kick{margin:0 46px 2px 0;font-size:13px;color:var(--ink-3)}
+.panel h2{font-size:21px;line-height:1.2;margin:0 46px 8px 0;outline:none}
+.panel h3{font-size:13.5px;font-weight:650;margin:20px 0 8px}
+.panel p{margin:8px 0}
+.panel .lead2{color:var(--ink-2)}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;margin:12px 0 0;font-size:14px}
+.kv dt{color:var(--ink-3)}
+.kv dd{margin:0}
+.rows{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.rows li{border:1px dashed var(--line-2);border-radius:8px;padding:8px 10px;display:grid;grid-template-columns:1fr auto;gap:2px 10px;align-items:start;font-size:14px;color:var(--ink-2)}
+.rows li.s-built{border:1px solid var(--ink-3);background:var(--card);color:var(--ink)}
+.rows li.s-in_progress{border:1px dashed var(--ink-3)}
+.rows .r1{font-weight:600;color:var(--ink)}
+.rows .r2{grid-column:1/-1;font-size:13px;color:var(--ink-3)}
+@media (min-width:760px) and (max-width:1559px){
+  .panel.left{right:auto;left:0;border-left:0;border-right:1px solid var(--line-2);box-shadow:14px 0 34px rgba(0,0,0,.4)}
+}
+@media (min-width:1560px){body.panel-open{padding-right:396px}.panel{box-shadow:none}}
+@media (max-width:900px){
+  .top{grid-template-columns:1fr}
+  .build{border-left:0;padding-left:0;border-top:1px solid var(--line);padding-top:14px}
+}
+@media (max-width:759px){
+  .wrap{padding:0 12px}
+  .top{padding:20px 0 16px}
+  .bar{gap:8px}
+  .bar .spacer{display:none}
+  .btn{padding:7px 10px}
+  .tour{grid-template-columns:1fr;bottom:8px}
+  .tbtns{justify-content:flex-start}
+  .tcount{margin-left:0}
+  #v3{height:clamp(360px,64vh,600px)}
+  .n3{font-size:11.5px;padding:3px 7px 4px}
+  .n3 b{font-size:12px}
+  .n3 .c,.f3{display:none}
+  .n3 .tag{font-size:10px;padding:2px 5px 3px}
+  .panel{top:auto;left:0;right:0;width:auto;max-height:66vh;border-left:0;border-top:1px solid var(--line-2);border-radius:16px 16px 0 0;padding:18px 16px 26px;animation-name:pup;box-shadow:0 -10px 30px rgba(0,0,0,.5)}
+  body.panel-open{padding-bottom:66vh}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#stage">Skip to the diagram</a>
+<div class="wrap">
+  <header class="top" id="top"></header>
+  <main>
+    <div class="bar">
+      <div class="seg" role="group" aria-label="View">
+        <button type="button" id="b2d" aria-pressed="true">2D diagram</button>
+        <button type="button" id="b3d" aria-pressed="false">3D model</button>
+      </div>
+      <span class="note" id="msg3d" role="status"></span>
+      <span class="spacer"></span>
+      <button type="button" class="btn" id="bEvent">Follow one event</button>
+      <button type="button" class="btn" id="bInc">Incident walkthrough (simulated)</button>
+      <button type="button" class="btn ghost" id="bPng">Download PNG</button>
+      <button type="button" class="btn ghost" id="bSvg">Download SVG</button>
+      <button type="button" class="btn ghost" id="bReset" hidden>Reset view</button>
+    </div>
+    <p class="lock" id="lock" role="status" hidden></p>
+    <div class="stage" id="stage">
+      <div id="v2"></div>
+      <div id="v3" hidden tabindex="0" role="group" aria-label="3D model of the lab. Arrow keys orbit, plus and minus zoom, shift with arrow keys pans, zero resets the view. Each component is a button inside this group.">
+        <canvas id="c3"></canvas>
+        <div class="l3wrap" id="l3"></div>
+        <p class="hint" id="hint3"></p>
+      </div>
+    </div>
+    <div class="tour" id="tour" role="region" aria-label="Walkthrough" hidden>
+      <div class="thead"><b id="tTitle"></b><span class="tag s-sim">Simulated</span><span class="tcount mono" id="tCount"></span></div>
+      <p class="tcap" id="tCap" aria-live="polite"></p>
+      <div class="tbtns">
+        <button type="button" class="btn" id="tBack">Back</button>
+        <button type="button" class="btn" id="tPlay">Pause</button>
+        <button type="button" class="btn" id="tNext">Next</button>
+        <button type="button" class="btn ghost" id="tClose">Close</button>
+      </div>
+    </div>
+    <section class="dets" aria-labelledby="dh">
+      <div class="dhead"><h2 id="dh">Detections</h2><p id="dsub"></p></div>
+      <ul class="chips" id="chips"></ul>
+    </section>
+    <section class="results" id="results" aria-labelledby="rh" hidden>
+      <h2 id="rh">Results</h2>
+      <dl id="rl"></dl>
+    </section>
+    <section class="legend" id="legend" aria-label="Legend"></section>
+  </main>
+  <footer class="foot"><p>Lab environment. All attack activity is simulated with benign commands on my own test accounts.</p></footer>
+</div>
+<aside class="panel" id="panel" aria-labelledby="ph" hidden></aside>
+<noscript><p style="padding:24px">This model needs JavaScript to draw the diagram.</p></noscript>
+
+<script>
+"use strict";
+/* =====================================================================
+   1. DATA. The single source of truth. Both views draw from this object.
+      Change a status, number or link here; nothing below needs editing.
+      status: "built" | "in_progress" | "planned"
+   ===================================================================== */
+const LAB = {
+  meta: {
+    title: "Mini-SOC Home Lab",
+    summary: "A small security operations lab on an Active Directory domain: a firewall gateway, a SIEM collecting Windows, Sysmon and firewall logs, EDR sensors, and tested detections mapped to MITRE ATT&CK.",
+    owner: "Jaime Saraza",
+    github: "https://github.com/jsaraza",
+    repoUrl: null,                 // project repo; hide all evidence links while null
+    lastUpdated: "2026-11-14"
+  },
+  zones: [
+    { id: "lab",      name: "Lab network",  detail: "adlab-net · 192.168.10.0/24 · VirtualBox internal network" },
+    { id: "home",     name: "Home network", detail: "private, not reachable from the internet" },
+    { id: "internet", name: "Internet",     detail: "" }
+  ],
+  nodes: [
+    { id: "dc01", zone: "lab", name: "AD-DC01", category: "Domain controller",
+      detail: "Windows Server 2022 · AD DS, DNS, file share", ip: "192.168.10.10", status: "built",
+      agents: [ { name: "Sysmon", status: "planned" },
+                { name: "Splunk Universal Forwarder", status: "planned" },
+                { name: "LimaCharlie sensor", status: "planned" } ] },
+    { id: "cl01", zone: "lab", name: "AD-CL01", category: "Workstation",
+      detail: "Windows 10 Pro · domain-joined", ip: "192.168.10.20", status: "built",
+      agents: [ { name: "Sysmon", status: "planned" },
+                { name: "Splunk Universal Forwarder", status: "planned" },
+                { name: "LimaCharlie sensor", status: "planned" } ] },
+    { id: "fw", zone: "lab|home", name: "pfSense", category: "Firewall / gateway",
+      detail: "LAN 192.168.10.1 · WAN on the home network · default deny, every block logged",
+      ip: "192.168.10.1", status: "in_progress" },
+    { id: "siem", zone: "home", name: "Splunk Enterprise", category: "SIEM",
+      detail: "Separate laptop · indexes: wineventlog, sysmon, pfsense, lanl · web UI limited to the home network",
+      status: "planned" },
+    { id: "edr", zone: "internet", name: "LimaCharlie", category: "EDR (cloud console)",
+      detail: "Process timelines and detection rules for both machines", status: "planned" },
+    { id: "net", zone: "internet", name: "Windows Update and DNS", category: "External services",
+      detail: "Patching, name resolution, licence activation", status: "planned" },
+    { id: "data", zone: "home", name: "Public attack dataset", category: "Reference data",
+      detail: "Los Alamos National Laboratory enterprise logs with labelled red-team activity, used to score detections",
+      status: "planned" }
+  ],
+  flows: [
+    { id: "f1", from: ["dc01","cl01"], via: "fw", to: "siem", port: "TCP 9997",
+      carries: "Windows Security, System, Sysmon and PowerShell logs", status: "planned" },
+    { id: "f2", from: ["fw"], to: "siem", port: "UDP 5514", carries: "Firewall logs", status: "planned" },
+    { id: "f3", from: ["dc01","cl01"], via: "fw", to: "edr", port: "TCP 443", carries: "EDR telemetry", status: "planned" },
+    { id: "f4", from: ["dc01"], via: "fw", to: "net", port: "443, 53", carries: "Updates, DNS, activation", status: "planned" },
+    { id: "f5", from: ["dc01","cl01"], to: "fw", port: "everything else", carries: "Blocked and logged", blocked: true, status: "planned" },
+    { id: "f6", from: ["data"], to: "siem", port: "one-off load", carries: "One day of authentication events", status: "planned" }
+  ],
+  detections: [
+    { id: "D1", name: "Brute force followed by success", attack: ["T1110"], sources: ["cl01","dc01"],
+      logic: "Many failed logons (4625) for one account in a short window, then a success (4624)", status: "planned", doc: null },
+    { id: "D2", name: "Account lockout", attack: ["T1110"], sources: ["dc01"],
+      logic: "Lockout event 4740, with the computer that caused it", status: "planned", doc: null },
+    { id: "D3", name: "Privileged group change", attack: ["T1098"], sources: ["dc01"],
+      logic: "A member added to Domain Admins, Enterprise Admins or Administrators (4728 / 4732 / 4756)", status: "planned", doc: null },
+    { id: "D4", name: "Encoded PowerShell", attack: ["T1059.001","T1027"], sources: ["cl01","dc01"],
+      logic: "A process started with -EncodedCommand (4688 / Sysmon 1); decoded content from 4104", status: "planned", doc: null },
+    { id: "D5", name: "Firewall deny spike", attack: ["T1046"], sources: ["fw"],
+      logic: "One internal machine blocked on many ports or hosts within minutes", status: "planned", doc: null },
+    { id: "D6", name: "Configuration drift", attack: ["T1484.001"], sources: ["dc01"], optional: true,
+      logic: "A Group Policy or domain policy change (5136 / 4739) outside an approved change", status: "planned", doc: null }
+  ],
+  incident: {
+    id: "INC-001", label: "Simulated account compromise", status: "planned", doc: null,
+    steps: [
+      { text: "Password guessing against a test account", node: "cl01", fires: "D1" },
+      { text: "Successful sign-in with the guessed password", node: "cl01", fires: "D1" },
+      { text: "The account is added to Domain Admins", node: "dc01", fires: "D3" },
+      { text: "Encoded PowerShell runs", node: "cl01", fires: "D4" },
+      { text: "Contained: account disabled, removed from the group, password reset", node: "dc01", fires: null }
+    ],
+    timeToDetectMin: null, timeToContainMin: null
+  },
+  metrics: { recallPct: null, precisionPct: null, falsePositivesPerDayBefore: null, falsePositivesPerDayAfter: null }
+};
+
+/* =====================================================================
+   2. WIRING (not content)
+   ===================================================================== */
+/* "Follow one event" traces this path. Every value is an id or name that
+   already exists in LAB; the button stays disabled until all of it is built. */
+const EVENT_PATH = { source: "cl01", agent: "Splunk Universal Forwarder", flow: "f1", detection: "D1" };
+
+/* The only external request this page can make: Three.js, pinned, with a
+   Subresource Integrity hash. Set THREE_SRI to null to skip the hash check. */
+const THREE_URL = "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js";
+const THREE_SRI = "sha384-IDC7sAMAIMB/TZ6dgKKPPAKZ2bXXXP8+FBMBC8cU319eBhKITx+PaalhfDkDNH28";
+
+/* =====================================================================
+   3. HELPERS
+   ===================================================================== */
+const SVGNS = "http://www.w3.org/2000/svg";
+function mk(ns, tag, attrs, kids) {
+  const e = ns ? document.createElementNS(ns, tag) : document.createElement(tag);
+  if (attrs) for (const k of Object.keys(attrs)) {
+    const v = attrs[k];
+    if (v === null || v === undefined || v === false) continue;
+    if (k === "text") e.textContent = v;
+    else e.setAttribute(k, v === true ? "" : String(v));
+  }
+  for (const c of kids.flat(Infinity)) if (c !== null && c !== undefined && c !== false) e.append(c);
+  return e;
+}
+const el = (t, a, ...k) => mk(null, t, a, k);    // HTML element (text is always set as text, never as markup)
+const sv = (t, a, ...k) => mk(SVGNS, t, a, k);   // SVG element
+const $ = (q, r) => (r || document).querySelector(q);
+const $$ = (q, r) => Array.from((r || document).querySelectorAll(q));
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const RM = window.matchMedia("(prefers-reduced-motion: reduce)");
+const reduced = () => RM.matches;
+
+const rootCss = getComputedStyle(document.documentElement);
+const cv = n => rootCss.getPropertyValue(n).trim();
+const C = { bg: cv("--bg"), stage: cv("--stage"), card: cv("--card"), line: cv("--line"), line2: cv("--line-2"),
+  ink: cv("--ink"), ink2: cv("--ink-2"), ink3: cv("--ink-3"), signal: cv("--signal"), sans: cv("--sans"), mono: cv("--mono") };
+const zoneColor = id => cv("--z-" + id) || cv("--z-other");
+
+const ST = { built: "Built", in_progress: "In progress", planned: "Planned" };
+/* Anything without a recognised status is treated as planned, so it can never look finished by accident. */
+const stOf = x => (x && ST[x.status]) ? x.status : "planned";
+
+const byId = list => Object.fromEntries((list || []).map(x => [x.id, x]));
+const nodeById = byId(LAB.nodes), flowById = byId(LAB.flows), detById = byId(LAB.detections), zoneById = byId(LAB.zones);
+const zonesOf = n => String(n.zone || "").split("|");
+const nm = id => nodeById[id] ? nodeById[id].name : id;
+const nodeColor = n => zonesOf(n).length > 1 ? C.ink2 : zoneColor(n.zone);
+const flowColor = f => f.blocked ? C.signal : (nodeById[f.to] ? nodeColor(nodeById[f.to]) : C.ink2);
+const siem = LAB.nodes.find(n => /siem/i.test(n.category || "")) || nodeById.siem || null;
+const safeUrl = u => (typeof u === "string" && /^https?:\/\//i.test(u)) ? u : null;
+
+function tally(items) {
+  const t = { built: 0, in_progress: 0, planned: 0, total: items.length };
+  items.forEach(i => { t[stOf(i)]++; });
+  return t;
+}
+function fmtDate(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || "");
+  if (!m) return iso || "";
+  return (+m[3]) + " " + ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][+m[2] - 1] + " " + m[1];
+}
+/* Evidence links exist only when the repo URL and the item's doc are both set. */
+function evidenceUrl(doc) {
+  const r = safeUrl(LAB.meta.repoUrl);
+  if (!r || !doc) return null;
+  if (safeUrl(doc)) return doc;
+  return r.replace(/\/+$/, "") + "/blob/HEAD/" + String(doc).replace(/^\/+/, "");
+}
+/* Which nodes and flows a detection depends on: its log sources, the flows that
+   carry those logs to the SIEM, anything those flows pass through, and the SIEM. */
+function detDeps(d) {
+  const nodes = new Set(d.sources || []), flows = new Map();
+  for (const f of LAB.flows) {
+    if (!siem || f.to !== siem.id) continue;
+    const srcs = f.from.filter(s => (d.sources || []).includes(s));
+    if (!srcs.length) continue;
+    flows.set(f.id, new Set(srcs));
+    if (f.via) nodes.add(f.via);
+  }
+  if (siem) nodes.add(siem.id);
+  return { nodes, flows };
+}
+/* Wrap text parts that should be monospace (addresses, ports, event IDs) in a span. */
+const RE_ADDR = /\b\d{1,3}(?:\.\d{1,3}){3}(?:\/\d{1,2})?\b|\b(?:TCP|UDP) \d+\b/g;
+const RE_IDS = /\b\d{4}\b|-[A-Z][A-Za-z]+\b|\bSysmon \d+\b|\b(?:TCP|UDP) \d+\b/g;
+function rich(text, re) {
+  const out = [], str = String(text);
+  let last = 0;
+  for (const m of str.matchAll(re)) {
+    if (m.index > last) out.push(str.slice(last, m.index));
+    out.push(el("span", { class: "mono", text: m[0] }));
+    last = m.index + m[0].length;
+  }
+  if (last < str.length) out.push(str.slice(last));
+  return out;
+}
+
+/* ---- text measuring, for wrapping inside the SVG ---- */
+const F = {
+  name: "600 15px " + C.sans, cat: "500 11.5px " + C.sans, ip: "12px " + C.mono, small: "11.5px " + C.sans,
+  tag: "600 10.5px " + C.sans, port: "600 12px " + C.mono, zname: "600 13px " + C.sans, zdet: "11px " + C.mono,
+  chip: "12.5px " + C.sans
+};
+const mctx = document.createElement("canvas").getContext("2d");
+const twCache = new Map();
+function tw(str, font) {
+  const key = font + "|" + str;
+  let v = twCache.get(key);
+  if (v === undefined) {
+    if (mctx) { mctx.font = font; v = mctx.measureText(str).width; }
+    else v = str.length * parseFloat(/([\d.]+)px/.exec(font)[1]) * 0.56;
+    twCache.set(key, v);
+  }
+  return v;
+}
+function fit(str, font, maxW) {
+  if (tw(str, font) <= maxW) return str;
+  let t = str;
+  while (t.length > 1 && tw(t + "…", font) > maxW) t = t.slice(0, -1).trimEnd();
+  return t + "…";
+}
+function wrap(str, font, maxW, maxLines) {
+  const words = String(str).split(/\s+/).filter(Boolean), lines = [];
+  let cur = "";
+  for (const w of words) {
+    const t = cur ? cur + " " + w : w;
+    if (!cur || tw(t, font) <= maxW) cur = t; else { lines.push(cur); cur = w; }
+  }
+  if (cur) lines.push(cur);
+  if (maxLines && lines.length > maxLines) {
+    const rest = lines.slice(maxLines - 1).join(" ");
+    lines.length = maxLines;
+    lines[maxLines - 1] = fit(rest, font, maxW);
+  }
+  return lines;
+}
+const tagW = label => Math.ceil(tw(label, F.tag)) + 14;
+
+/* =====================================================================
+   4. READINESS: what has to be built before each walkthrough unlocks
+   ===================================================================== */
+function pathState(items) {
+  if (!items) return { state: "planned", missing: [] };
+  const missing = items.filter(i => i.status !== "built");
+  const state = !missing.length ? "built" : missing.some(i => i.status === "planned") ? "planned" : "in_progress";
+  return { state, missing };
+}
+function eventItems() {
+  const P = EVENT_PATH, s = nodeById[P.source], f = flowById[P.flow], d = detById[P.detection];
+  if (!s || !f || !d || !nodeById[f.to]) return null;
+  const a = (s.agents || []).find(x => x.name === P.agent);
+  const it = [{ label: s.name, status: stOf(s) },
+    { label: P.agent + " on " + s.name, status: a ? stOf(a) : "planned" },
+    { label: "log flow " + f.id + " (" + f.port + ")", status: stOf(f) }];
+  if (f.via && nodeById[f.via]) it.push({ label: nm(f.via), status: stOf(nodeById[f.via]) });
+  it.push({ label: nm(f.to), status: stOf(nodeById[f.to]) });
+  it.push({ label: "detection " + d.id, status: stOf(d) });
+  return it;
+}
+function incidentItems() {
+  const inc = LAB.incident;
+  if (!inc || !inc.steps || !inc.steps.length) return null;
+  const it = [{ label: inc.id, status: stOf(inc) }], seen = new Set();
+  const addNode = id => { const n = nodeById[id]; if (n && !seen.has("n" + id)) { seen.add("n" + id); it.push({ label: n.name, status: stOf(n) }); } };
+  for (const s of inc.steps) {
+    addNode(s.node);
+    if (!s.fires) continue;
+    const d = detById[s.fires];
+    if (!d) { it.push({ label: "detection " + s.fires, status: "planned" }); continue; }
+    if (seen.has("d" + d.id)) continue;
+    seen.add("d" + d.id);
+    it.push({ label: "detection " + d.id, status: stOf(d) });
+    const dep = detDeps(d);
+    dep.nodes.forEach(addNode);
+    dep.flows.forEach((_, fid) => { if (!seen.has("f" + fid)) { seen.add("f" + fid); const f = flowById[fid]; it.push({ label: "log flow " + f.id + " (" + f.port + ")", status: stOf(f) }); } });
+  }
+  return it;
+}
+function eventSteps() {
+  const P = EVENT_PATH, s = nodeById[P.source], f = flowById[P.flow], d = detById[P.detection];
+  const via = f.via ? nodeById[f.via] : null, to = nodeById[f.to];
+  const fl = new Map([[f.id, new Set([s.id])]]);
+  const tok = (leg, a, b) => ({ flow: f.id, src: s.id, leg, from: a, to: b });
+  const steps = [
+    { where: s.name, text: "A sign-in to " + s.name + " fails. Windows records it as a failed logon, event 4625.", nodes: [s.id], tok: tok("a", 0, 0) },
+    { where: P.agent, text: "The forwarder on " + s.name + " reads the event from the Security log and sends it on " + f.port + ".", nodes: [s.id], agents: [{ node: s.id, name: P.agent }], tok: tok("a", 0, 0) }
+  ];
+  if (via) steps.push({ where: via.name, text: via.name + " lets this one log path leave the lab network. Everything else is blocked and logged.", nodes: [via.id], flows: fl, tok: tok("a", 0, 1) });
+  steps.push({ where: to.name, text: to.name + " receives the event and indexes it, so it can be searched.", nodes: [to.id], flows: fl, tok: tok(via ? "b" : "a", 0, 1) });
+  steps.push({ where: d.id + " alert", text: "Detection " + d.id + " counts failed logons per account. Many failures followed by a success raise an alert.", nodes: [to.id], dets: [d.id], alert: d.id, tok: tok(via ? "b" : "a", 1, 1) });
+  return steps;
+}
+function incidentSteps() {
+  return LAB.incident.steps.map(s => {
+    const d = s.fires ? detById[s.fires] : null;
+    return { where: nm(s.node), text: s.text, nodes: [s.node], dets: d ? [d.id] : [], alert: d ? d.id : null, fires: d };
+  });
+}
+
+/* =====================================================================
+   5. LAYOUT: one geometry object per orientation. The 2D drawing, the
+      export and the 3D model all read the same geometry.
+   ===================================================================== */
+function cardSpec(n, w) {
+  const segs = String(n.detail || "").split(" · ");
+  let ipLine = n.ip || "", descSrc = segs[0] || "";
+  if (n.ip && segs[0] && segs[0].includes(n.ip)) { ipLine = segs[0]; descSrc = segs[1] || ""; }
+  const inner = w - 28;
+  const desc = descSrc ? wrap(descSrc, F.small, inner, 2) : [];
+  const agents = n.agents || [];
+  const h = 47 + (ipLine ? 18 : 0) + 15 * desc.length + (agents.length ? 12 + 22 * agents.length - 3 + 12 : 14);
+  let nameSize = 15;
+  while (nameSize > 13 && tw(n.name, "600 " + nameSize + "px " + C.sans) > inner) nameSize -= 0.5;
+  return { name: fit(n.name, "600 " + nameSize + "px " + C.sans, inner), nameSize, ipLine, desc, agents, h };
+}
+function roles() {
+  const zs = LAB.zones.map(z => z.id);
+  const gw = LAB.nodes.find(n => zonesOf(n).length > 1) || null, gid = gw ? gw.id : null;
+  const inZ = z => LAB.nodes.filter(n => n.zone === z);
+  const left = inZ(zs[0]), mid = inZ(zs[1]), far = inZ(zs[2]);
+  const isLeft = id => left.some(n => n.id === id);
+  const zoneOfId = id => nodeById[id] ? nodeById[id].zone : null;
+  const ing = LAB.flows.filter(f => gid && (f.via === gid || f.to === gid) && f.from.length && f.from.every(isLeft))
+    .sort((a, b) => (a.blocked ? 1 : 0) - (b.blocked ? 1 : 0));
+  const out = LAB.flows.filter(f => gid && (f.via === gid || f.from.includes(gid)) && f.to !== gid);
+  const mids = out.filter(f => zoneOfId(f.to) === zs[1]).sort((a, b) => (b.via ? 1 : 0) - (a.via ? 1 : 0));
+  const fars = out.filter(f => zoneOfId(f.to) === zs[2]);
+  const done = new Set([...ing, ...mids, ...fars].map(f => f.id));
+  const rest = LAB.flows.filter(f => !done.has(f.id));
+  const mainId = mids[0] ? mids[0].to : (mid[0] ? mid[0].id : null);
+  const midOrd = [...mid].sort((a, b) => (b.id === mainId ? 1 : 0) - (a.id === mainId ? 1 : 0));
+  const farIds = fars.map(f => f.to), rank = id => { const i = farIds.indexOf(id); return i < 0 ? 99 : i; };
+  const farOrd = [...far].sort((a, b) => rank(a.id) - rank(b.id));
+  return { zs, gw, left, mid: midOrd, far: farOrd, ing, mids, fars, rest };
+}
+const newGeom = kind => ({ kind, nodes: {}, zones: {}, flows: {}, W: 0, H: 0 });
+const flowGeom = (G, id) => G.flows[id] || (G.flows[id] = { parts: [], legs: {}, labels: [] });
+function legOf(G, f, src) { const o = flowGeom(G, f.id); return o.legs[src] || (o.legs[src] = { a: null, b: null }); }
+function setTail(G, f, pts) { for (const s of f.from) { const L = legOf(G, f, s); if (f.via) L.b = pts; else L.a = pts; } }
+
+function labelRows(f, L) {
+  const rows = [];
+  if (L.secondary) { wrap(f.carries, F.small, L.maxW, 2).forEach(t => rows.push({ k: "c", t })); return rows; }
+  const one = tw(f.port, F.port) + 8 + tagW(ST[stOf(f)]) <= L.maxW;
+  rows.push({ k: "p", t: f.port, tag: one });
+  if (!one) rows.push({ k: "t" });
+  wrap(f.carries, F.small, L.maxW, 3).forEach(t => rows.push({ k: "c", t }));
+  return rows;
+}
+
+const rowH = r => r.k === "t" ? 21 : r.k === "p" && r.tag ? 17 : 15;
+const rowsH = rows => rows.reduce((a, r) => a + rowH(r), 0);
+
+/* Flows that do not pass the gateway (for example a one-off data load inside one zone). */
+function routeRest(G, R) {
+  for (const f of R.rest) {
+    const o = flowGeom(G, f.id), t = G.nodes[f.to];
+    if (!t) continue;
+    f.from.forEach((sid, i) => {
+      const b = G.nodes[sid];
+      if (!b) return;
+      const ov = Math.min(b.x + b.w, t.x + t.w) - Math.max(b.x, t.x);
+      let pts, lab;
+      if (ov > 60 && (b.y >= t.y + t.h || b.y + b.h <= t.y)) {
+        const below = b.y >= t.y + t.h, y0 = below ? b.y : b.y + b.h, y1 = below ? t.y + t.h : t.y;
+        if (G.kind === "wide") {
+          const x = t.x + t.w / 2, z = G.zones[nodeById[f.to].zone];
+          pts = [[x, y0], [x, y1]];
+          lab = { x: x - 12, y: (y0 + y1) / 2, place: "middle", anchor: "end", maxW: x - 12 - ((z ? z.x : t.x - 200) + 14) };
+        } else {
+          const x = t.x + 34;
+          pts = [[x, y0], [x, y1]];
+          lab = { x: x + 12, y: (y0 + y1) / 2, place: "middle", anchor: "start", maxW: t.x + t.w - x - 14 };
+        }
+      } else {
+        const mx = (b.x + b.w + t.x) / 2, ya = b.y + b.h / 2, yb = t.y + t.h / 2;
+        pts = [[b.x + b.w, ya], [mx, ya], [mx, yb], [t.x, yb]];
+        lab = { x: mx + 8, y: (ya + yb) / 2, place: "middle", anchor: "start", maxW: 150 };
+      }
+      o.parts.push({ src: f.from.length > 1 ? sid : "*", pts, arrow: true });
+      legOf(G, f, sid).a = pts;
+      if (i === 0) o.labels.push(lab);
+    });
+  }
+}
+
+/* ---- left-to-right layout (desktop, export, and the footprint of the 3D model) ---- */
+function layoutWide() {
+  const R = roles(), G = newGeom("wide"), g = 12;
+  const top = 10, rowY = top + 58, hostW = 240, cardW = 224, gwW = 150, hx = 26;
+  let y = rowY;
+  for (const n of R.left) { const sp = cardSpec(n, hostW); G.nodes[n.id] = { x: hx, y, w: hostW, h: sp.h, sp }; y += sp.h + 44; }
+  const lb = R.left.map(n => G.nodes[n.id]);
+  const gwCy = lb.length >= 2 ? (lb[0].y + lb[0].h + lb[1].y) / 2 : lb.length ? lb[0].y + lb[0].h / 2 : rowY + 150;
+  const nIng = R.ing.length, lane = k => hx + hostW + 24 + k * g, lastLane = lane(Math.max(nIng - 1, 0));
+  const hasBlock = R.ing.some(f => f.blocked);
+  const gwX = lastLane + (hasBlock ? 150 : 44);
+  let gw = null;
+  if (R.gw) {
+    const sp = cardSpec(R.gw, gwW), h = Math.max(sp.h, 2 * g * Math.max(nIng - 1, 1) + 40);
+    gw = G.nodes[R.gw.id] = { x: gwX, y: gwCy - h / 2, w: gwW, h, sp };
+  }
+  const gr = gw ? gw.x + gw.w : gwX + gwW;
+
+  /* into the gateway: one host above it, one below; the first shared flow joins in the middle */
+  if (gw) {
+    const kOf = new Map(R.ing.map((f, k) => [f.id, k]));
+    for (const n of R.left) {
+      const b = G.nodes[n.id], cy = b.y + b.h / 2, upper = cy <= gwCy;
+      const mine = R.ing.filter(f => f.from.includes(n.id)).sort((p, q) => upper ? kOf.get(q.id) - kOf.get(p.id) : kOf.get(p.id) - kOf.get(q.id));
+      mine.forEach((f, j) => {
+        const k = kOf.get(f.id), e = cy + (j - (mine.length - 1) / 2) * g, lx = lane(k), py = gwCy + (upper ? -1 : 1) * k * g;
+        const endX = f.blocked ? gw.x - 17 : gw.x, o = flowGeom(G, f.id);
+        legOf(G, f, n.id).a = [[b.x + b.w, e], [lx, e], [lx, py], [gw.x, py]];
+        if (k === 0 && f.from.length > 1) {
+          o.parts.push({ src: n.id, pts: [[b.x + b.w, e], [lx, e], [lx, py]] });
+          if (!o.tee) { o.tee = true; o.parts.push({ src: "*", pts: [[lx, py], [endX, py]], dot: [lx, py], mark: f.blocked ? [gw.x - 8, py] : null }); }
+        } else {
+          o.parts.push({ src: f.from.length > 1 ? n.id : "*", pts: [[b.x + b.w, e], [lx, e], [lx, py], [endX, py]], mark: f.blocked ? [gw.x - 8, py] : null });
+        }
+        if (f.blocked) o.labels.push({ x: lastLane + 12, y: py, place: upper ? "above" : "below", anchor: "start", maxW: gw.x - lastLane - 26, secondary: o.labels.length > 0 });
+      });
+    }
+  }
+
+  /* middle zone: the node the gateway feeds sits level with it, so the main log path is one straight line */
+  const midX = gr + 214;
+  let my = gwCy;
+  R.mid.forEach((n, i) => {
+    const sp = cardSpec(n, cardW), yy = i === 0 ? gwCy - sp.h / 2 : my;
+    G.nodes[n.id] = { x: midX, y: yy, w: cardW, h: sp.h, sp };
+    my = yy + sp.h + 54;
+  });
+  if (gw) R.mids.forEach((f, i) => {
+    const t = G.nodes[f.to], yy = gwCy + i * g;
+    let pts;
+    if (yy > t.y + 8 && yy < t.y + t.h - 8) pts = [[gr, yy], [t.x, yy]];
+    else { const jx = t.x - 18 - i * g; pts = [[gr, yy], [jx, yy], [jx, t.y + t.h / 2], [t.x, t.y + t.h / 2]]; }
+    flowGeom(G, f.id).parts.push({ src: "*", pts, arrow: true });
+    setTail(G, f, pts);
+    flowGeom(G, f.id).labels.push({ x: gr + 14, y: yy, place: i === 0 ? "above" : "below", anchor: "start", maxW: midX - gr - 26 });
+  });
+
+  /* far zone: reached across the top of the middle zone */
+  const homeL = gr - 40, homeR = midX + cardW + 16, farL = homeR + 18, farLane = farL + 22, farX = farL + 44;
+  const m0 = R.mid[0] ? G.nodes[R.mid[0].id] : null, rowBelow = (m0 ? m0.y + m0.h : gwCy) + 54;
+  let fy = rowY;
+  R.far.forEach((n, i) => {
+    const sp = cardSpec(n, cardW), yy = i === 0 ? rowY : Math.max(fy, rowBelow);
+    G.nodes[n.id] = { x: farX, y: yy, w: cardW, h: sp.h, sp };
+    fy = yy + sp.h + 40;
+  });
+  if (gw) R.fars.forEach((f, i) => {
+    const t = G.nodes[f.to], ex = gr - 24 + i * g, ty = rowY + 44 + i * g;
+    let pts;
+    if (ty > t.y + 8 && ty < t.y + t.h - 8) pts = [[ex, gw.y], [ex, ty], [t.x, ty]];
+    else { const lx = farLane - Math.max(i - 1, 0) * g; pts = [[ex, gw.y], [ex, ty], [lx, ty], [lx, t.y + t.h / 2], [t.x, t.y + t.h / 2]]; }
+    flowGeom(G, f.id).parts.push({ src: "*", pts, arrow: true });
+    setTail(G, f, pts);
+    flowGeom(G, f.id).labels.push({ x: gr + 14, y: ty, place: i === 0 ? "above" : "below", anchor: "start", maxW: 250 });
+  });
+
+  const bottom = Math.max.apply(null, Object.values(G.nodes).map(b => b.y + b.h)) + 18;
+  const zr = (id, x0, x1) => {
+    const z = zoneById[id];
+    if (!z) return;
+    G.zones[id] = { x: x0, y: top, w: x1 - x0, h: bottom - top, hx: x0 + 16, nameY: top + 24, detY: top + 41, detail: z.detail ? wrap(z.detail, F.zdet, x1 - x0 - 32, 2) : [] };
+  };
+  zr(R.zs[0], 10, gwX + 22); zr(R.zs[1], homeL, homeR); zr(R.zs[2], farL, farX + cardW + 16);
+  routeRest(G, R);
+  G.W = farX + cardW + 26; G.H = bottom + 10;
+  return G;
+}
+
+/* ---- top-to-bottom layout (phones and narrow windows) ---- */
+function layoutTall() {
+  const R = roles(), G = newGeom("tall"), g = 11, W = 380, zx = 8, zw = 364, cx = 40, cw = 244, cr = cx + cw;
+  const det = (id, maxW) => { const z = zoneById[id]; return z && z.detail ? wrap(z.detail, F.zdet, maxW, 3) : []; };
+  let y = 10;
+
+  /* zone 1: hosts stacked */
+  const d0 = det(R.zs[0], zx + zw - cx - 12), z0 = { x: zx, y, w: zw, hx: cx, nameY: y + 24, detY: y + 41, detail: d0 };
+  y += 34 + d0.length * 14 + 10;
+  for (const n of R.left) { const sp = cardSpec(n, cw); G.nodes[n.id] = { x: cx, y, w: cw, h: sp.h, sp }; y += sp.h + 18; }
+  const hasBlock = R.ing.some(f => f.blocked);
+  y += hasBlock ? 50 : 12;
+
+  /* lanes down the right-hand side into the gateway */
+  const h0 = R.left[0] || null, h1 = R.left[1] || null, kOf = new Map(R.ing.map((f, k) => [f.id, k]));
+  const merged = (h0 && h1) ? (R.ing.find(f => !f.blocked && f.from.includes(h0.id) && f.from.includes(h1.id)) || null) : null;
+  const bOnly = h1 ? R.ing.filter(f => f !== merged && f.from.includes(h1.id)).sort((p, q) => kOf.get(q.id) - kOf.get(p.id)) : [];
+  const aOnly = h0 ? R.ing.filter(f => f !== merged && f.from.includes(h0.id)).sort((p, q) => kOf.get(p.id) - kOf.get(q.id)) : [];
+  const lanes = [];
+  bOnly.forEach(f => lanes.push({ f, h: h1 }));
+  if (merged) lanes.push({ f: merged, h: null });
+  aOnly.forEach(f => lanes.push({ f, h: h0 }));
+  lanes.forEach((L, i) => { L.i = i; });
+  const nL = lanes.length, lx = i => cr + 22 + i * g;
+
+  let gw = null, gwCy = y + 47;
+  if (R.gw) {
+    const sp = cardSpec(R.gw, cw), h = Math.max(sp.h, 12 * Math.max(nL - 1, 1) + 30);
+    gw = G.nodes[R.gw.id] = { x: cx, y, w: cw, h, sp };
+    gwCy = y + h / 2;
+  }
+  const gb = gw ? gw.y + gw.h : y + 94;
+  if (gw) {
+    const py = i => gwCy + (i - (nL - 1) / 2) * 12;
+    const bList = h1 ? lanes.filter(L => L.h === h1 || L.h === null).sort((p, q) => (p.h === null ? -1 : q.h === null ? 1 : q.i - p.i)) : [];
+    const aList = h0 ? lanes.filter(L => L.h === h0 || L.h === null).sort((p, q) => q.i - p.i) : [];
+    const exitY = (b, list, j) => b.y + b.h / 2 + (j - (list.length - 1) / 2) * 12;
+    const B = h1 ? G.nodes[h1.id] : null, A = h0 ? G.nodes[h0.id] : null;
+    let eMerge = null;
+    bList.forEach((L, j) => {
+      const f = L.f, e = exitY(B, bList, j), x = lx(L.i), p = py(L.i), endX = f.blocked ? cr + 17 : cr, o = flowGeom(G, f.id);
+      legOf(G, f, h1.id).a = [[cr, e], [x, e], [x, p], [cr, p]];
+      if (L.h === null) { eMerge = e; o.parts.push({ src: h1.id, pts: [[cr, e], [x, e]] }); o.parts.push({ src: "*", pts: [[x, e], [x, p], [endX, p]], dot: [x, e] }); }
+      else o.parts.push({ src: f.from.length > 1 ? h1.id : "*", pts: [[cr, e], [x, e], [x, p], [endX, p]], mark: f.blocked ? [cr + 8, p] : null });
+    });
+    aList.forEach((L, j) => {
+      const f = L.f, e = exitY(A, aList, j), x = lx(L.i), p = py(L.i), endX = f.blocked ? cr + 17 : cr, o = flowGeom(G, f.id);
+      legOf(G, f, h0.id).a = [[cr, e], [x, e], [x, p], [cr, p]];
+      if (L.h === null) o.parts.push({ src: h0.id, pts: [[cr, e], [x, e], [x, eMerge]] });
+      else o.parts.push({ src: f.from.length > 1 ? h0.id : "*", pts: [[cr, e], [x, e], [x, p], [endX, p]], mark: f.blocked ? [cr + 8, p] : null });
+    });
+    const bf = R.ing.find(f => f.blocked);
+    if (bf) flowGeom(G, bf.id).labels.push({ x: lx(0) - 12, y: gw.y - 14, place: "above", anchor: "end", maxW: cw - 12 });
+  }
+  z0.h = (gw ? gw.y + 14 : y) - z0.y;
+  if (zoneById[R.zs[0]]) G.zones[R.zs[0]] = z0;
+
+  /* zone 2: header beside the lines coming out of the gateway, then the node it feeds */
+  const z1y = gb - 14, xa = cr - 46, xb = xa + 12;
+  const d1 = det(R.zs[1], xa - 14 - cx), z1 = { x: zx, y: z1y, w: zw, hx: cx, nameY: gb + 24, detY: gb + 41, detail: d1 };
+  const headB = gb + 30 + d1.length * 14;
+  let bandB = headB + 8;
+  const midLab = [];
+  if (gw) R.mids.forEach((f, i) => {
+    const L = i === 0
+      ? { x: xa - 10, y: headB + 8, place: "top", anchor: "end", maxW: xa - 10 - cx }
+      : { x: xb + 10 + (i - 1) * 12, y: gb + 12, place: "top", anchor: "start", maxW: zx + zw - 10 - (xb + 10) };
+    midLab.push(L);
+    bandB = Math.max(bandB, L.y + rowsH(labelRows(f, L)));
+  });
+  y = bandB + 14;
+  R.mid.forEach((n, i) => {
+    const sp = cardSpec(n, cw);
+    G.nodes[n.id] = { x: cx, y, w: cw, h: sp.h, sp };
+    y += sp.h + 50;
+  });
+  y -= 50;
+  if (gw) R.mids.forEach((f, i) => {
+    const t = G.nodes[f.to], x = xa + i * 12, pts = [[x, gb], [x, t.y]];
+    flowGeom(G, f.id).parts.push({ src: "*", pts, arrow: true });
+    setTail(G, f, pts);
+    flowGeom(G, f.id).labels.push(midLab[i]);
+  });
+  z1.h = y + 16 - z1.y;
+  if (zoneById[R.zs[1]]) G.zones[R.zs[1]] = z1;
+  y += 16 + 12;
+
+  /* zone 3: reached down the left-hand side */
+  const d2 = det(R.zs[2], zx + zw - cx - 12), z2 = { x: zx, y, w: zw, hx: cx, nameY: y + 24, detY: y + 41, detail: d2 };
+  y += 30 + d2.length * 14;
+  const nf = R.fars.length;
+  R.far.forEach(n => {
+    const sp = cardSpec(n, cw), fed = R.fars.some(f => f.to === n.id);
+    y += fed ? 62 : 14;
+    G.nodes[n.id] = { x: cx, y, w: cw, h: sp.h, sp };
+    y += sp.h;
+  });
+  if (gw) R.fars.forEach((f, i) => {
+    const t = G.nodes[f.to], ey = gwCy + ((nf - 1) / 2 - i) * 12, lxf = Math.max(28 - i * g, zx + 8), runY = t.y - 16, dropX = cx + 70;
+    const pts = [[gw.x, ey], [lxf, ey], [lxf, runY], [dropX, runY], [dropX, t.y]];
+    flowGeom(G, f.id).parts.push({ src: "*", pts, arrow: true });
+    setTail(G, f, pts);
+    flowGeom(G, f.id).labels.push({ x: cx, y: runY, place: "above", anchor: "start", maxW: zx + zw - cx - 12 });
+  });
+  z2.h = y + 16 - z2.y;
+  if (zoneById[R.zs[2]]) G.zones[R.zs[2]] = z2;
+  routeRest(G, R);
+  G.W = W; G.H = y + 16 + 10;
+  return G;
+}
+
+/* =====================================================================
+   6. DRAWING THE 2D VIEW (SVG)
+   ===================================================================== */
+const SVG_CSS = `
+.dg text{font-family:${C.sans};fill:${C.ink2}}
+.zbox{fill:currentColor;fill-opacity:.05;stroke:currentColor;stroke-opacity:.5;stroke-width:1}
+.zname{font-size:13px;font-weight:600;fill:currentColor!important}
+.zdet{font-family:${C.mono}!important;font-size:11px;fill:${C.ink3}!important}
+.node{cursor:pointer;outline:none}
+.node .ring{fill:none;stroke:#fff;stroke-width:2;opacity:0}
+.node:focus-visible .ring{opacity:1}
+.node .back{fill:${C.stage}}
+.node .box{fill:${C.card};stroke:currentColor;stroke-width:1.5}
+.node.st-in_progress .box{fill-opacity:.5;stroke-dasharray:8 4}
+.node.st-planned .box{fill-opacity:0;stroke-opacity:.62;stroke-dasharray:3 4}
+.node:hover .box,.node.sel .box,.node.on .box{stroke-opacity:1;stroke-width:2.6}
+.nm{font-size:15px;font-weight:600;fill:${C.ink}!important}
+.node.st-planned .nm{fill:#c7d0da!important}
+.cat{font-size:11.5px;font-weight:500;fill:${C.ink3}!important}
+.ip{font-family:${C.mono}!important;font-size:12px}
+.ds{font-size:11.5px;fill:${C.ink3}!important}
+.abox{fill:${C.ink};fill-opacity:.08;stroke:${C.ink2};stroke-opacity:.75;stroke-width:1}
+.agent.st-in_progress .abox{fill-opacity:.03;stroke-dasharray:6 3}
+.agent.st-planned .abox{fill-opacity:0;stroke:${C.line2};stroke-opacity:1;stroke-dasharray:2 3}
+.agent.on .abox{stroke:${C.signal};stroke-opacity:1;stroke-width:1.8;stroke-dasharray:none}
+.an{font-size:11.5px}
+.agent.st-built .an{fill:${C.ink}!important}
+.as{font-size:10.5px;font-weight:600;fill:${C.ink3}!important}
+.agent.st-built .as{fill:${C.ink}!important}
+.tg rect{fill:${C.stage};stroke:${C.ink3};stroke-width:1;stroke-dasharray:2 3}
+.tg text{font-size:10.5px;font-weight:600}
+.tg.st-built rect{fill:${C.ink2};stroke:${C.ink2};stroke-dasharray:none}
+.tg.st-built text{fill:${C.bg}!important}
+.tg.st-in_progress rect{stroke:${C.ink2};stroke-dasharray:6 3}
+.ln{fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.flow.st-in_progress .ln{stroke-dasharray:9 5;stroke-opacity:.9}
+.flow.st-planned .ln{stroke-dasharray:3 5;stroke-opacity:.7}
+.arr{fill:currentColor;stroke:currentColor;stroke-width:1.2;stroke-linejoin:round}
+.flow.st-planned .arr,.flow.st-in_progress .arr{fill:${C.stage}}
+.dot{fill:currentColor}
+.xm circle{fill:${C.stage};stroke:${C.signal};stroke-width:1.5}
+.xm path{stroke:${C.signal};stroke-width:1.6;stroke-linecap:round;fill:none}
+.fp{font-family:${C.mono}!important;font-size:12px;font-weight:600;fill:${C.ink}!important}
+.flabel.st-planned .fp{fill:#c7d0da!important}
+.fc{font-size:11.5px}
+.part.on .ln{stroke-width:2.8;stroke-opacity:1}
+.dg.focusing .node:not(.on)>*:not(.back):not(.ring),.dg.focusing .part:not(.on),.dg.focusing .flabel:not(.on){opacity:.28}
+.node>*:not(.ring),.part,.flabel{transition:opacity .15s}
+.tok .c{fill:${C.signal}}
+.tok .r{fill:none;stroke:${C.signal};stroke-opacity:.55;stroke-width:1.5}
+.al rect{fill:${C.signal}}
+.al text{fill:${C.bg}!important;font-size:10.5px;font-weight:700}
+.xt{font-size:24px;font-weight:650;fill:${C.ink}!important}
+.xs{font-size:13px}
+.xm2{font-size:12px;fill:${C.ink3}!important}
+.xb{font-size:16px;font-weight:650;fill:${C.ink}!important}
+.xh{font-size:14px;font-weight:650;fill:${C.ink}!important}
+.cbox{fill:${C.card};stroke:${C.ink3};stroke-width:1}
+.cbox.st-in_progress{fill-opacity:.5;stroke-dasharray:8 4}
+.cbox.st-planned{fill-opacity:0;stroke:${C.line2};stroke-dasharray:3 4}
+.ci{font-family:${C.mono}!important;font-size:13px;font-weight:700;fill:${C.ink}!important}
+.cn{font-size:12.5px}
+.ca{font-family:${C.mono}!important;font-size:11px;fill:${C.ink3}!important}
+@media (prefers-reduced-motion:reduce){.node>*,.part,.flabel{transition:none}}
+`;
+const svgStyle = () => sv("style", { text: SVG_CSS });
+
+function pathD(pts, r) {
+  const p = pts.filter((q, i) => i === 0 || q[0] !== pts[i - 1][0] || q[1] !== pts[i - 1][1]);
+  let d = "M" + p[0][0] + "," + p[0][1];
+  for (let i = 1; i < p.length - 1; i++) {
+    const a = p[i - 1], b = p[i], c = p[i + 1];
+    const d1 = Math.hypot(b[0] - a[0], b[1] - a[1]), d2 = Math.hypot(c[0] - b[0], c[1] - b[1]), rr = Math.min(r, d1 / 2, d2 / 2);
+    const ax = b[0] - (b[0] - a[0]) / d1 * rr, ay = b[1] - (b[1] - a[1]) / d1 * rr;
+    const bx = b[0] + (c[0] - b[0]) / d2 * rr, by = b[1] + (c[1] - b[1]) / d2 * rr;
+    d += " L" + ax.toFixed(1) + "," + ay.toFixed(1) + " Q" + b[0] + "," + b[1] + " " + bx.toFixed(1) + "," + by.toFixed(1);
+  }
+  const l = p[p.length - 1];
+  return d + " L" + l[0] + "," + l[1];
+}
+function along(pts, t) {
+  const seg = [];
+  let tot = 0;
+  for (let i = 1; i < pts.length; i++) { const d = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); seg.push(d); tot += d; }
+  let d = clamp(t, 0, 1) * tot;
+  for (let i = 0; i < seg.length; i++) {
+    if (d <= seg[i] || i === seg.length - 1) {
+      const k = seg[i] ? clamp(d / seg[i], 0, 1) : 0;
+      return [pts[i][0] + (pts[i + 1][0] - pts[i][0]) * k, pts[i][1] + (pts[i + 1][1] - pts[i][1]) * k];
+    }
+    d -= seg[i];
+  }
+  return pts[pts.length - 1];
+}
+function tagG(label, st) {
+  const w = tagW(label);
+  return sv("g", { class: "tg st-" + st }, sv("rect", { width: w, height: 17, rx: 8.5 }), sv("text", { x: w / 2, y: 12, "text-anchor": "middle", text: label }));
+}
+function drawNode(n, r, interactive) {
+  const st = stOf(n), sp = r.sp;
+  const g = sv("g", { class: "node st-" + st, "data-id": n.id, style: "color:" + nodeColor(n), transform: "translate(" + r.x + "," + r.y + ")" });
+  if (interactive) {
+    g.setAttribute("tabindex", "0");
+    g.setAttribute("role", "button");
+    g.setAttribute("aria-label", n.name + ", " + n.category + ", " + ST[st] + ". Show details.");
+  }
+  g.append(sv("rect", { class: "ring", x: -5, y: -5, width: r.w + 10, height: r.h + 10, rx: 14 }),
+    sv("rect", { class: "back", width: r.w, height: r.h, rx: 10 }),
+    sv("rect", { class: "box", width: r.w, height: r.h, rx: 10 }));
+  let y = 30;
+  g.append(sv("text", { x: 14, y, class: "nm", style: sp.nameSize < 15 ? "font-size:" + sp.nameSize + "px" : null, text: sp.name }));
+  y += 17; g.append(sv("text", { x: 14, y, class: "cat", text: n.category }));
+  if (sp.ipLine) { y += 18; g.append(sv("text", { x: 14, y, class: "ip", text: sp.ipLine })); }
+  sp.desc.forEach(t => { y += 15; g.append(sv("text", { x: 14, y, class: "ds", text: t })); });
+  if (sp.agents.length) {
+    y += 12;
+    sp.agents.forEach(a => {
+      const as = stOf(a), w = r.w - 20;
+      g.append(sv("g", { class: "agent st-" + as, "data-node": n.id, "data-agent": a.name, transform: "translate(10," + y + ")" },
+        sv("rect", { class: "abox", width: w, height: 19, rx: 5 }),
+        sv("text", { x: 8, y: 13.5, class: "an", text: fit(a.name, F.small, w - 22 - tw(ST[as], F.tag)) }),
+        sv("text", { x: w - 8, y: 13.5, class: "as", "text-anchor": "end", text: ST[as] })));
+      y += 22;
+    });
+  }
+  const tg = tagG(ST[st], st);
+  tg.setAttribute("transform", "translate(" + (r.w - 12 - tagW(ST[st])) + ",-9)");
+  g.append(tg);
+  return g;
+}
+function drawFlow(f, FG) {
+  const st = stOf(f);
+  const g = sv("g", { class: "flow st-" + st, "data-id": f.id, style: "color:" + flowColor(f) });
+  for (const p of FG.parts) {
+    const pg = sv("g", { class: "part", "data-flow": f.id, "data-src": p.src }, sv("path", { class: "ln", d: pathD(p.pts, 6) }));
+    if (p.arrow) {
+      const a = p.pts[p.pts.length - 1], b = p.pts[p.pts.length - 2], ang = Math.atan2(a[1] - b[1], a[0] - b[0]) * 180 / Math.PI;
+      pg.append(sv("path", { class: "arr", d: "M0,0 L-8,-4 L-8,4 Z", transform: "translate(" + a[0] + "," + a[1] + ") rotate(" + ang.toFixed(1) + ")" }));
+    }
+    if (p.dot) pg.append(sv("circle", { class: "dot", cx: p.dot[0], cy: p.dot[1], r: 2.8 }));
+    if (p.mark) pg.append(sv("g", { class: "xm", transform: "translate(" + p.mark[0] + "," + p.mark[1] + ")" }, sv("circle", { r: 6.5 }), sv("path", { d: "M-2.8,-2.8 L2.8,2.8 M2.8,-2.8 L-2.8,2.8" })));
+    g.append(pg);
+  }
+  return g;
+}
+function drawFlowLabel(f, L) {
+  const st = stOf(f), rows = labelRows(f, L), hh = rowsH(rows), end = L.anchor === "end";
+  const g = sv("g", { class: "flabel st-" + st, "data-flow": f.id });
+  const top = L.place === "above" ? L.y - 8 - hh : L.place === "below" ? L.y + 7 : L.place === "top" ? L.y : L.y - hh / 2;
+  let ry = top;
+  rows.forEach(r => {
+    const by = ry + (r.k === "t" ? 14 : 11);
+    ry += rowH(r);
+    if (r.k === "p") {
+      const pw = tw(r.t, F.port), tgw = tagW(ST[st]), total = r.tag ? pw + 8 + tgw : pw, x0 = end ? L.x - total : L.x;
+      g.append(sv("text", { x: x0.toFixed(1), y: by, class: "fp", text: r.t }));
+      if (r.tag) { const t = tagG(ST[st], st); t.setAttribute("transform", "translate(" + (x0 + pw + 8).toFixed(1) + "," + (by - 12.5) + ")"); g.append(t); }
+    } else if (r.k === "t") {
+      const t = tagG(ST[st], st);
+      t.setAttribute("transform", "translate(" + (end ? L.x - tagW(ST[st]) : L.x) + "," + (by - 12.5) + ")");
+      g.append(t);
+    } else g.append(sv("text", { x: L.x, y: by, class: "fc", "text-anchor": end ? "end" : "start", text: r.t }));
+  });
+  return g;
+}
+function drawDiagram(G, interactive) {
+  const root = sv("g", { class: "diagram" });
+  for (const z of LAB.zones) {
+    const r = G.zones[z.id];
+    if (!r) continue;
+    const zg = sv("g", { class: "zone", style: "color:" + zoneColor(z.id) },
+      sv("rect", { class: "zbox", x: r.x, y: r.y, width: r.w, height: r.h, rx: 14 }),
+      sv("text", { class: "zname", x: r.hx, y: r.nameY, text: z.name }));
+    r.detail.forEach((t, i) => zg.append(sv("text", { class: "zdet", x: r.hx, y: r.detY + i * 14, text: t })));
+    root.append(zg);
+  }
+  for (const f of LAB.flows) if (G.flows[f.id]) root.append(drawFlow(f, G.flows[f.id]));
+  for (const f of LAB.flows) if (G.flows[f.id]) G.flows[f.id].labels.forEach(L => root.append(drawFlowLabel(f, L)));
+  for (const n of LAB.nodes) if (G.nodes[n.id]) root.append(drawNode(n, G.nodes[n.id], interactive));
+  if (interactive) {
+    root.append(sv("g", { class: "al", display: "none", "aria-hidden": "true" }, sv("rect", { height: 17, rx: 8.5 }), sv("text", { y: 12, "text-anchor": "middle" })));
+    root.append(sv("g", { class: "tok", display: "none", "aria-hidden": "true" }, sv("circle", { class: "r", r: 10 }), sv("circle", { class: "c", r: 5 })));
+  }
+  return root;
+}
+
+const V2 = { svg: null, G: null, kind: null };
+function render2D(kind) {
+  const G = kind === "tall" ? layoutTall() : layoutWide();
+  V2.G = G; V2.kind = kind;
+  const host = $("#v2");
+  host.classList.toggle("tall", kind === "tall");
+  const svg = sv("svg", { class: "dg", viewBox: "0 0 " + G.W + " " + G.H, role: "group",
+    "aria-label": "Architecture diagram: " + LAB.zones.map(z => z.name).join(", then ") + ". Each component is a button that opens its details." });
+  svg.append(svgStyle(), drawDiagram(G, true));
+  svg.addEventListener("click", e => { const n = e.target.closest(".node"); if (n) openNode(n.dataset.id, n); });
+  svg.addEventListener("keydown", e => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const n = e.target.closest(".node");
+    if (n) { e.preventDefault(); openNode(n.dataset.id, n); }
+  });
+  host.replaceChildren(svg);
+  V2.svg = svg;
+  apply2D(); drawToken();
+}
+function pickLayout() {
+  const w = $("#stage").clientWidth, kind = w >= 1100 ? "wide" : "tall";
+  if (kind !== V2.kind) render2D(kind);
+}
+
+/* =====================================================================
+   7. EXPORT: a standalone SVG (and a 2x PNG made from it) for the README
+   ===================================================================== */
+function metricItems() {
+  const m = LAB.metrics || {}, inc = LAB.incident || {}, out = [];
+  const has = v => v !== null && v !== undefined && v !== "";
+  if (has(m.recallPct)) out.push({ k: "Recall", v: m.recallPct + "%" });
+  if (has(m.precisionPct)) out.push({ k: "Precision", v: m.precisionPct + "%" });
+  const b = m.falsePositivesPerDayBefore, a = m.falsePositivesPerDayAfter;
+  if (has(b) && has(a)) out.push({ k: "False positives per day, before → after tuning", v: b + " → " + a });
+  else if (has(b)) out.push({ k: "False positives per day, before tuning", v: String(b) });
+  else if (has(a)) out.push({ k: "False positives per day, after tuning", v: String(a) });
+  if (has(inc.timeToDetectMin)) out.push({ k: "Time to detect (" + inc.id + ", simulated)", v: inc.timeToDetectMin + " min" });
+  if (has(inc.timeToContainMin)) out.push({ k: "Time to contain (" + inc.id + ", simulated)", v: inc.timeToContainMin + " min" });
+  return out;
+}
+function countsText() {
+  const ag = tally(LAB.nodes.flatMap(n => n.agents || [])), fl = tally(LAB.flows), de = tally(LAB.detections);
+  return ["Agents " + ag.built + " of " + ag.total, "Flows " + fl.built + " of " + fl.total, "Detections " + de.built + " of " + de.total];
+}
+function buildExportSvg() {
+  const G = layoutWide(), W = G.W, pad = 24, m = LAB.meta, t = tally(LAB.nodes);
+  const root = sv("svg", { xmlns: SVGNS, class: "dg", viewBox: "0 0 " + W + " 100", width: W });
+  const bg = sv("rect", { width: W, height: 100, fill: C.stage });
+  root.append(svgStyle(), bg);
+  /* title block */
+  root.append(sv("text", { class: "xt", x: pad, y: 44, text: m.title }));
+  let y = 68;
+  wrap(m.summary, "13px " + C.sans, W - pad * 2 - 380, 3).forEach(line => { root.append(sv("text", { class: "xs", x: pad, y, text: line })); y += 18; });
+  const gh = safeUrl(m.github);
+  root.append(sv("text", { class: "xm2", x: pad, y: y + 2, text: m.owner + (gh ? " · " + gh.replace(/^https?:\/\//, "") : "") }));
+  root.append(sv("text", { class: "xb", x: W - pad, y: 42, "text-anchor": "end", text: t.built + " of " + t.total + " components built" }));
+  root.append(sv("text", { class: "xm2", x: W - pad, y: 62, "text-anchor": "end", text: countsText().join(" · ") }));
+  root.append(sv("text", { class: "xm2", x: W - pad, y: 80, "text-anchor": "end", text: "Last updated " + fmtDate(m.lastUpdated) }));
+  const headH = y + 18;
+  const dia = drawDiagram(G, false);
+  dia.setAttribute("transform", "translate(0," + headH + ")");
+  root.append(dia);
+  /* detections */
+  y = headH + G.H + 22;
+  root.append(sv("text", { class: "xh", x: pad, y, text: "Detections, mapped to MITRE ATT&CK" }));
+  y += 22;
+  const n = LAB.detections.length, per = Math.min(n, 6) || 1, gap = 10, cw = (W - pad * 2 - gap * (per - 1)) / per, ch = 88;
+  LAB.detections.forEach((d, i) => {
+    const st = stOf(d), cx = pad + (i % per) * (cw + gap), cy = y + Math.floor(i / per) * (ch + 18);
+    const g = sv("g", { transform: "translate(" + cx.toFixed(1) + "," + cy + ")" },
+      sv("rect", { class: "cbox st-" + st, width: cw.toFixed(1), height: ch, rx: 10 }),
+      sv("text", { class: "ci", x: 12, y: 24, text: d.id + (d.optional ? "  optional" : "") }));
+    wrap(d.name, F.chip, cw - 24, 2).forEach((line, j) => g.append(sv("text", { class: "cn", x: 12, y: 44 + j * 16, text: line })));
+    g.append(sv("text", { class: "ca", x: 12, y: ch - 10, text: (d.attack || []).join("  ") }));
+    const tg = tagG(ST[st], st);
+    tg.setAttribute("transform", "translate(" + (cw - 12 - tagW(ST[st])).toFixed(1) + ",-9)");
+    g.append(tg);
+    root.append(g);
+  });
+  y += Math.ceil(n / per) * (ch + 18) + 8;
+  const mets = metricItems();
+  if (mets.length) { root.append(sv("text", { class: "xs", x: pad, y, text: "Results: " + mets.map(x => x.k + " " + x.v).join(" · ") })); y += 24; }
+  /* legend */
+  let x = pad;
+  const leg = (cls, dash, label) => {
+    root.append(sv("rect", { x, y: y - 11, width: 22, height: 14, rx: 4, fill: cls === "built" ? C.card : "none", stroke: cls === "planned" ? C.ink3 : C.ink2, "stroke-width": 1.5, "stroke-dasharray": dash }));
+    root.append(sv("text", { class: "xm2", x: x + 30, y, text: label }));
+    x += 30 + tw(label, "12px " + C.sans) + 26;
+  };
+  leg("built", null, "Built"); leg("prog", "6 3", "In progress"); leg("planned", "2 3", "Planned");
+  root.append(sv("text", { class: "xm2", x, y, text: "Dashed, dimmed and tagged means not built yet." }));
+  y += 22;
+  root.append(sv("text", { class: "xm2", x: pad, y, text: "Lab environment. All attack activity is simulated with benign commands on my own test accounts." }));
+  const H = y + 22;
+  root.setAttribute("viewBox", "0 0 " + W + " " + H);
+  root.setAttribute("height", H);
+  bg.setAttribute("height", H);
+  return { svg: root, W, H };
+}
+function saveBlob(blob, name) {
+  const a = el("a", { href: URL.createObjectURL(blob), download: name });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+function exportSvgText() {
+  const x = buildExportSvg();
+  return { text: '<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(x.svg), W: x.W, H: x.H };
+}
+function downloadSvg() { saveBlob(new Blob([exportSvgText().text], { type: "image/svg+xml" }), "soc-lab-model.svg"); }
+function downloadPng() {
+  const x = exportSvgText(), img = new Image();
+  img.onload = () => {
+    const c = el("canvas", { width: x.W * 2, height: x.H * 2 });
+    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+    c.toBlob(b => { if (b) saveBlob(b, "soc-lab-model.png"); }, "image/png");
+  };
+  img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(x.text);
+}
+
+/* =====================================================================
+   8. SHARED STATE: what is highlighted, in either view
+      layers: hover (a detection chip) > tour (a walkthrough) > sel (open panel)
+   ===================================================================== */
+const focusLayers = { hover: null, tour: null, sel: null };
+function setFocus(layer, spec) {
+  focusLayers[layer] = spec ? {
+    nodes: new Set(spec.nodes || []), flows: spec.flows instanceof Map ? spec.flows : new Map(),
+    dets: new Set(spec.dets || []), agents: spec.agents || [], alert: spec.alert || null
+  } : null;
+  applyFocus();
+}
+const curFocus = () => focusLayers.hover || focusLayers.tour || focusLayers.sel;
+let view = "2d", selected = null;
+const V3 = { state: "idle", want: false, T: null, api: null };
+
+function applyFocus() { apply2D(); applyChips(); if (V3.api) V3.api.applyFocus(); }
+function partOn(f, flowId, src) {
+  if (!f) return false;
+  const s = f.flows.get(flowId);
+  return !!s && (s === "*" || src === "*" || s.has(src));
+}
+function apply2D() {
+  const svg = V2.svg;
+  if (!svg) return;
+  const f = curFocus();
+  svg.classList.toggle("focusing", !!f);
+  $$(".node", svg).forEach(n => {
+    n.classList.toggle("on", !!f && f.nodes.has(n.dataset.id));
+    n.classList.toggle("sel", !!selected && selected.type === "node" && selected.id === n.dataset.id);
+  });
+  $$(".part", svg).forEach(p => p.classList.toggle("on", partOn(f, p.dataset.flow, p.dataset.src)));
+  $$(".flabel", svg).forEach(l => l.classList.toggle("on", !!f && f.flows.has(l.dataset.flow)));
+  $$(".agent", svg).forEach(a => a.classList.toggle("on", !!f && f.agents.some(x => x.node === a.dataset.node && x.name === a.dataset.agent)));
+  const al = $(".al", svg), sb = siem ? V2.G.nodes[siem.id] : null;
+  if (al) {
+    if (f && f.alert && sb) {
+      const label = f.alert + " alert", w = Math.ceil(tw(label, "700 10.5px " + C.sans)) + 16;
+      al.firstChild.setAttribute("width", w);
+      al.lastChild.setAttribute("x", w / 2);
+      al.lastChild.textContent = label;
+      al.setAttribute("transform", "translate(" + (sb.x + 12) + "," + (sb.y - 9) + ")");
+      al.removeAttribute("display");
+    } else al.setAttribute("display", "none");
+  }
+}
+function applyChips() {
+  const f = curFocus();
+  $$(".chip").forEach(c => {
+    c.classList.toggle("on", !!f && f.dets.has(c.dataset.id));
+    c.classList.toggle("alert", !!f && f.alert === c.dataset.id);
+  });
+}
+function tokenXY(G) {
+  const st = tour.kind ? tour.steps[tour.i] : null;
+  if (!st || !st.tok || !G || !G.flows[st.tok.flow]) return null;
+  const leg = G.flows[st.tok.flow].legs[st.tok.src];
+  if (!leg) return null;
+  const pts = leg[st.tok.leg] || leg.a;
+  return pts ? along(pts, tour.p) : null;
+}
+function drawToken() {
+  const g = V2.svg ? $(".tok", V2.svg) : null;
+  if (!g) return;
+  const xy = tokenXY(V2.G);
+  if (xy) { g.setAttribute("transform", "translate(" + xy[0].toFixed(1) + "," + xy[1].toFixed(1) + ")"); g.removeAttribute("display"); }
+  else g.setAttribute("display", "none");
+}
+
+/* =====================================================================
+   9. PAGE FURNITURE: header, chips, legend, results, side panel
+   ===================================================================== */
+function renderHeader() {
+  const m = LAB.meta, t = tally(LAB.nodes), gh = safeUrl(m.github);
+  document.title = m.title;
+  const rest = [t.in_progress ? t.in_progress + " in progress" : null, t.planned ? t.planned + " planned" : null].filter(Boolean).join(", ");
+  $("#top").replaceChildren(
+    el("div", null,
+      el("h1", { text: m.title }),
+      el("p", { class: "summary", text: m.summary }),
+      el("p", { class: "by" }, el("span", { class: "own", text: m.owner }), gh ? el("a", { href: gh, rel: "noopener noreferrer", text: gh.replace(/^https?:\/\//, "") }) : null)),
+    el("div", { class: "build", role: "group", "aria-label": "Build status" },
+      el("p", { class: "n" }, el("b", { text: t.built + " of " + t.total }), " components built"),
+      el("ul", { class: "pips", "aria-hidden": "true" }, LAB.nodes.map(n => el("li", { class: "pip s-" + stOf(n) }))),
+      rest ? el("p", { class: "sub", text: rest }) : null,
+      el("p", { class: "sub" }, countsText().map(x => el("span", { text: x }))),
+      el("p", { class: "upd" }, "Last updated ", el("time", { datetime: m.lastUpdated, text: fmtDate(m.lastUpdated) }))));
+}
+function renderChips() {
+  const de = tally(LAB.detections);
+  $("#dsub").textContent = de.built + " of " + de.total + " built. Mapped to MITRE ATT&CK. Point at one, or tab to it, to see what it depends on.";
+  $("#chips").replaceChildren(...LAB.detections.map(d => {
+    const st = stOf(d), dep = detDeps(d);
+    const b = el("button", { type: "button", class: "chip s-" + st, "data-id": d.id,
+      "aria-label": d.id + ", " + d.name + ", ATT&CK " + (d.attack || []).join(" and ") + ", " + ST[st] + (d.optional ? ", optional" : "") + ". Show details." },
+      el("span", { class: "chead" }, el("span", { class: "cid mono", text: d.id }), d.optional ? el("span", { class: "copt", text: "optional" }) : null, el("span", { class: "tag s-" + st, text: ST[st] })),
+      el("span", { class: "cname", text: d.name }),
+      el("span", { class: "catk mono", text: (d.attack || []).join("  ") }));
+    const on = () => setFocus("hover", { nodes: dep.nodes, flows: dep.flows, dets: [d.id] });
+    const off = () => setFocus("hover", null);
+    b.addEventListener("mouseenter", on); b.addEventListener("focus", on);
+    b.addEventListener("mouseleave", off); b.addEventListener("blur", off);
+    b.addEventListener("click", () => openPanel({ type: "det", id: d.id }, b, "right"));
+    return el("li", null, b);
+  }));
+}
+function renderLegend() {
+  const sw = st => el("span", { class: "sw s-" + st, "aria-hidden": "true" });
+  $("#legend").replaceChildren(
+    el("span", { class: "lg" }, sw("built"), "Built"),
+    el("span", { class: "lg" }, sw("in_progress"), "In progress"),
+    el("span", { class: "lg" }, sw("planned"), "Planned"),
+    el("span", { class: "lg" }, el("span", { class: "lnk s-built", "aria-hidden": "true" }), "Flow in place"),
+    el("span", { class: "lg" }, el("span", { class: "lnk", "aria-hidden": "true" }), "Flow not built yet"),
+    el("span", { class: "lg" }, el("span", { class: "xk", "aria-hidden": "true", text: "✕" }), "Blocked at the firewall and logged"),
+    ...LAB.zones.map(z => el("span", { class: "lg" }, el("span", { class: "zd", "aria-hidden": "true", style: "background:" + zoneColor(z.id) }), z.name)),
+    el("span", { class: "lg", text: "Anything not built is dashed, dimmed and carries a text tag." }));
+}
+function renderResults() {
+  const items = metricItems();
+  $("#results").hidden = !items.length;
+  $("#rl").replaceChildren(...items.map(x => el("div", null, el("dt", { text: x.k }), el("dd", { text: x.v }))));
+}
+
+const panel = $("#panel");
+let panelOpener = null;
+function flowRow(f, who) {
+  const st = stOf(f);
+  return el("li", { class: "s-" + st },
+    el("span", { class: "r1" }, el("span", { class: "mono", text: f.port }), " ", who),
+    el("span", { class: "tag s-" + st, text: ST[st] }),
+    el("span", { class: "r2", text: f.carries }));
+}
+function nodePanel(n) {
+  const st = stOf(n), k = [];
+  k.push(el("p", { class: "kick", text: n.category }), el("h2", { id: "ph", tabindex: "-1", text: n.name }),
+    el("p", null, el("span", { class: "tag s-" + st, text: ST[st] })));
+  if (n.detail) k.push(el("p", { class: "lead2" }, rich(n.detail, RE_ADDR)));
+  const kv = [];
+  if (n.ip) kv.push(el("dt", { text: "Address" }), el("dd", { class: "mono", text: n.ip }));
+  kv.push(el("dt", { text: "Network" }), el("dd", { text: zonesOf(n).map(z => zoneById[z] ? zoneById[z].name : z).join(" and ") }));
+  k.push(el("dl", { class: "kv" }, kv));
+  if (n.agents && n.agents.length) k.push(el("h3", { text: "Installed on it" }), el("ul", { class: "rows" }, n.agents.map(a => {
+    const s2 = stOf(a);
+    return el("li", { class: "s-" + s2 }, el("span", { class: "r1", text: a.name }), el("span", { class: "tag s-" + s2, text: ST[s2] }));
+  })));
+  const sends = LAB.flows.filter(f => f.from.includes(n.id)), recv = LAB.flows.filter(f => f.to === n.id), thru = LAB.flows.filter(f => f.via === n.id);
+  if (sends.length) k.push(el("h3", { text: "Logs and traffic it sends" }), el("ul", { class: "rows" }, sends.map(f => flowRow(f, "to " + nm(f.to) + (f.via ? " through " + nm(f.via) : "")))));
+  if (recv.length) k.push(el("h3", { text: "What it receives" }), el("ul", { class: "rows" }, recv.map(f => flowRow(f, "from " + f.from.map(nm).join(" and ")))));
+  if (thru.length) k.push(el("h3", { text: "What passes through it" }), el("ul", { class: "rows" }, thru.map(f => flowRow(f, f.from.map(nm).join(" and ") + " to " + nm(f.to)))));
+  const dets = LAB.detections.map(d => ({ d, role: (d.sources || []).includes(n.id) ? "Uses logs from this machine" : (siem && siem.id === n.id) ? "Runs here" : detDeps(d).nodes.has(n.id) ? "Its logs pass through here" : null })).filter(x => x.role);
+  if (dets.length) k.push(el("h3", { text: "Detections that use it" }), el("ul", { class: "rows" }, dets.map(x => {
+    const s2 = stOf(x.d);
+    return el("li", { class: "s-" + s2 }, el("span", { class: "r1" }, el("span", { class: "mono", text: x.d.id }), " ", x.d.name), el("span", { class: "tag s-" + s2, text: ST[s2] }), el("span", { class: "r2", text: x.role }));
+  })));
+  const ev = evidenceUrl(n.doc);
+  if (ev) k.push(el("p", null, el("a", { href: ev, rel: "noopener noreferrer", text: "Evidence in the project repo" })));
+  return k;
+}
+function detPanel(d) {
+  const st = stOf(d), dep = detDeps(d), k = [];
+  k.push(el("p", { class: "kick", text: "Detection" + (d.optional ? " (optional)" : "") }),
+    el("h2", { id: "ph", tabindex: "-1" }, el("span", { class: "mono", text: d.id }), " ", d.name),
+    el("p", null, el("span", { class: "tag s-" + st, text: ST[st] })));
+  k.push(el("h3", { text: "What it looks for" }), el("p", { class: "lead2" }, rich(d.logic || "", RE_IDS)));
+  const atk = (d.attack || []).map((t, i) => [i ? ", " : null, el("a", { class: "mono", href: "https://attack.mitre.org/techniques/" + encodeURIComponent(t).replace("%2E", "/").replace(".", "/") + "/", rel: "noopener noreferrer", text: t })]);
+  k.push(el("dl", { class: "kv" },
+    el("dt", { text: "MITRE ATT&CK" }), el("dd", null, atk),
+    el("dt", { text: "Log sources" }), el("dd", { text: (d.sources || []).map(nm).join(", ") }),
+    siem ? [el("dt", { text: "Runs on" }), el("dd", { text: siem.name })] : null));
+  const fl = [...dep.flows.keys()].map(id => flowById[id]);
+  if (fl.length) k.push(el("h3", { text: "Log flows it depends on" }), el("ul", { class: "rows" }, fl.map(f => flowRow(f, f.from.map(nm).join(" and ") + " to " + nm(f.to)))));
+  const ev = evidenceUrl(d.doc);
+  if (ev) k.push(el("p", null, el("a", { href: ev, rel: "noopener noreferrer", text: "Evidence in the project repo" })));
+  return k;
+}
+function openPanel(sel, opener, side) {
+  const item = sel.type === "node" ? nodeById[sel.id] : detById[sel.id];
+  if (!item) return;
+  selected = sel;
+  panelOpener = opener || document.activeElement;
+  const close = el("button", { type: "button", class: "pclose", "aria-label": "Close details", text: "✕" });
+  close.addEventListener("click", () => closePanel(true));
+  panel.replaceChildren(close, ...(sel.type === "node" ? nodePanel(item) : detPanel(item)));
+  panel.classList.toggle("left", side === "left");
+  panel.hidden = false;
+  panel.scrollTop = 0;
+  document.body.classList.add("panel-open");
+  if (sel.type === "node") {
+    const fl = new Map();
+    LAB.flows.forEach(f => { if (f.from.includes(sel.id)) fl.set(f.id, new Set([sel.id])); else if (f.to === sel.id || f.via === sel.id) fl.set(f.id, "*"); });
+    setFocus("sel", { nodes: [sel.id], flows: fl });
+  } else { const dep = detDeps(item); setFocus("sel", { nodes: dep.nodes, flows: dep.flows, dets: [item.id] }); }
+  const h = $("#ph", panel);
+  if (h) h.focus({ preventScroll: true });
+}
+function closePanel(restore) {
+  if (panel.hidden) return;
+  const sel = selected, opener = panelOpener;
+  panel.hidden = true;
+  document.body.classList.remove("panel-open");
+  selected = null; panelOpener = null;
+  setFocus("sel", null);
+  if (!restore) return;
+  let target = opener && opener.isConnected ? opener : null;
+  if (!target && sel && sel.type === "node") target = view === "2d" ? $('.node[data-id="' + sel.id + '"]', V2.svg) : $('.n3[data-id="' + sel.id + '"]');
+  if (target) target.focus({ preventScroll: true });
+}
+function openNode(id, opener) {
+  let side = "right";
+  if (view === "2d" && V2.G && V2.G.nodes[id] && V2.kind === "wide") { const r = V2.G.nodes[id]; side = (r.x + r.w / 2) / V2.G.W > 0.55 ? "left" : "right"; }
+  else if (view === "3d" && opener && opener.getBoundingClientRect) { const r = opener.getBoundingClientRect(); side = (r.left + r.width / 2) > window.innerWidth * 0.55 ? "left" : "right"; }
+  openPanel({ type: "node", id }, opener, side);
+}
+
+/* =====================================================================
+   10. WALKTHROUGHS: "Follow one event" and the incident, in either view
+   ===================================================================== */
+const tour = { kind: null, steps: [], i: 0, p: 1, auto: false, raf: 0, timer: 0, opener: null };
+const tourEl = $("#tour");
+function updateTourButtons() {
+  const inc = LAB.incident;
+  const defs = [["bEvent", eventItems(), "Follow one event"], ["bInc", incidentItems(), (inc ? inc.id : "Incident") + " walkthrough (simulated)"]];
+  for (const [id, items, label] of defs) {
+    const b = $("#" + id), ps = pathState(items);
+    b.replaceChildren(label);
+    b._missing = ps.missing; b._label = label;
+    if (ps.state === "built") { b.removeAttribute("aria-disabled"); b.removeAttribute("title"); }
+    else {
+      b.setAttribute("aria-disabled", "true");
+      b.append(el("span", { class: "tag s-" + ps.state, text: ST[ps.state] }));
+      b.title = "Available once every step on this path is built";
+    }
+  }
+}
+function lockMessage(b) {
+  const p = $("#lock"), miss = (b._missing || []).map(m => m.label);
+  p.replaceChildren(el("b", { text: b._label }), " opens once every step on its path is built. Still to build: ", miss.length ? miss.join(", ") : "the path itself", ".");
+  p.hidden = false;
+}
+function stopAnim() { cancelAnimationFrame(tour.raf); clearTimeout(tour.timer); tour.raf = 0; tour.timer = 0; }
+function startTour(kind, opener) {
+  stopTour(false);
+  closePanel(false);
+  $("#lock").hidden = true;
+  tour.kind = kind; tour.opener = opener || null;
+  tour.steps = kind === "event" ? eventSteps() : incidentSteps();
+  tour.auto = kind === "event" && !reduced();
+  $("#tTitle").textContent = kind === "event" ? "Follow one event" : LAB.incident.id + ": " + LAB.incident.label;
+  $("#tPlay").hidden = !(kind === "event" && !reduced());
+  tourEl.hidden = false;
+  if (V3.api) V3.api.stopAuto();
+  goStep(0, false);
+  $("#tNext").focus({ preventScroll: true });
+}
+function stopTour(restore) {
+  if (!tour.kind) return;
+  stopAnim();
+  const opener = tour.opener;
+  tour.kind = null; tour.steps = []; tour.opener = null;
+  tourEl.hidden = true;
+  setFocus("tour", null);
+  drawToken();
+  if (restore && opener && opener.isConnected) opener.focus({ preventScroll: true });
+}
+function goStep(i, manual) {
+  if (!tour.kind) return;
+  if (manual) tour.auto = false;
+  stopAnim();
+  const last = tour.steps.length - 1;
+  i = clamp(i, 0, last);
+  tour.i = i;
+  const st = tour.steps[i];
+  setFocus("tour", st);
+  $("#tCount").textContent = "Step " + (i + 1) + " of " + (last + 1);
+  const cap = [el("span", { class: "where", text: st.where + ". " }), rich(st.text, RE_IDS)];
+  if (tour.kind === "incident") cap.push(el("span", { class: "fires", text: st.fires ? "Detection " + st.fires.id + ": " + st.fires.name : "No detection at this step: this is the response." }));
+  $("#tCap").replaceChildren(...cap);
+  const next = () => { if (tour.auto && i < last) tour.timer = setTimeout(() => goStep(i + 1, false), anim ? 1300 : 2900); else if (tour.auto) { tour.auto = false; syncTourBar(); } };
+  const anim = !!st.tok && st.tok.from !== st.tok.to && !reduced();
+  if (st.tok && anim) {
+    const t0 = performance.now(), D = 1800;
+    tour.p = st.tok.from;
+    const tick = t => {
+      const k = clamp((t - t0) / D, 0, 1), e = k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+      tour.p = st.tok.from + (st.tok.to - st.tok.from) * e;
+      drawToken();
+      if (k < 1) tour.raf = requestAnimationFrame(tick); else { tour.raf = 0; next(); }
+    };
+    tour.raf = requestAnimationFrame(tick);
+  } else { tour.p = st.tok ? st.tok.to : 1; next(); }
+  drawToken();
+  syncTourBar();
+  reveal(st.nodes[0]);
+}
+function syncTourBar() {
+  const last = tour.steps.length - 1;
+  $("#tBack").disabled = tour.i === 0;
+  $("#tNext").disabled = tour.i === last;
+  $("#tPlay").textContent = tour.auto ? "Pause" : tour.i === last ? "Replay" : "Play";
+}
+function reveal(id) {
+  const smooth = reduced() ? "auto" : "smooth";
+  if (view !== "2d") {
+    const r = $("#stage").getBoundingClientRect();
+    if (r.top < 0 || r.top > window.innerHeight * 0.6) window.scrollBy({ top: r.top - 12, behavior: smooth });
+    return;
+  }
+  const n = V2.svg ? $('.node[data-id="' + id + '"]', V2.svg) : null;
+  if (!n) return;
+  const r = n.getBoundingClientRect(), bar = tourEl.hidden ? 0 : tourEl.getBoundingClientRect().height + 24;
+  if (r.top < 8 || r.bottom > window.innerHeight - bar) window.scrollBy({ top: r.top + r.height / 2 - (window.innerHeight - bar) / 2, behavior: smooth });
+}
+
+/* =====================================================================
+   11. 3D VIEW. Three.js is fetched once from a pinned CDN URL. If that
+       fails, or WebGL is missing, the 2D view carries on unchanged.
+   ===================================================================== */
+function hasWebGL() {
+  try {
+    const c = document.createElement("canvas"), gl = c.getContext("webgl2") || c.getContext("webgl");
+    if (!gl) return false;
+    const ext = gl.getExtension("WEBGL_lose_context");
+    if (ext) ext.loseContext();
+    return true;
+  } catch (e) { return false; }
+}
+async function loadThree(signal) {
+  if (!THREE_SRI) return import(THREE_URL);
+  const res = await fetch(THREE_URL, { integrity: THREE_SRI, mode: "cors", credentials: "omit", referrerPolicy: "no-referrer", signal });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  const url = URL.createObjectURL(new Blob([await res.arrayBuffer()], { type: "text/javascript" }));
+  try { return await import(url); } finally { URL.revokeObjectURL(url); }
+}
+function sync3DButton() {
+  const b = $("#b3d"), msg = $("#msg3d");
+  b.textContent = (V3.state === "loading" && V3.want) ? "3D model (loading)" : "3D model";
+  if (V3.state === "failed") {
+    b.setAttribute("aria-disabled", "true");
+    msg.textContent = "3D view unavailable: " + V3.reason + ". The 2D diagram shows everything.";
+  }
+}
+function fail3D(reason) {
+  V3.state = "failed"; V3.reason = reason; V3.want = false;
+  if (view === "3d") setView("2d");
+  sync3DButton();
+}
+function init3D() {
+  if (V3.state !== "idle") return;
+  if (!hasWebGL()) { fail3D("WebGL is not available in this browser"); return; }
+  V3.state = "loading";
+  const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 20000);
+  loadThree(ctl.signal).then(T => {
+    clearTimeout(timer);
+    V3.T = T; V3.state = "ready";
+    sync3DButton();
+    if (V3.want) { V3.want = false; setView("3d"); }
+  }).catch(() => { clearTimeout(timer); fail3D("Three.js could not be loaded (offline, or the CDN is blocked)"); });
+}
+function setView(v) {
+  if (v === view) return;
+  if (v === "3d") {
+    if (V3.state === "failed") return;
+    if (V3.state !== "ready") { V3.want = true; sync3DButton(); init3D(); return; }
+  }
+  const is3 = v === "3d";
+  $("#v2").hidden = is3; $("#v3").hidden = !is3;
+  if (is3 && !V3.api) {
+    try { V3.api = make3D(V3.T); }
+    catch (e) { $("#v2").hidden = false; $("#v3").hidden = true; fail3D("WebGL could not start"); return; }
+  }
+  view = v;
+  $("#b2d").setAttribute("aria-pressed", String(!is3));
+  $("#b3d").setAttribute("aria-pressed", String(is3));
+  $("#bPng").hidden = is3; $("#bSvg").hidden = is3; $("#bReset").hidden = !is3;
+  if (V3.api) { if (is3) V3.api.show(); else V3.api.hide(); }
+  if (!is3) pickLayout();
+  applyFocus(); drawToken();
+}
+
+function make3D(T) {
+  const host = $("#v3"), canvas = $("#c3"), lwrap = $("#l3");
+  const G = layoutWide(), K = 0.02, ox = G.W / 2, oz = G.H / 2, LH = 0.1;
+  const P = (x, y, h) => new T.Vector3((x - ox) * K, h || 0, (y - oz) * K);
+  const col = h => new T.Color(h);
+  const renderer = new T.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setClearColor(0x000000, 0);
+  const scene = new T.Scene(), camera = new T.PerspectiveCamera(24, 1, 0.1, 800);
+  scene.add(new T.HemisphereLight(0xe6eef7, 0x0d1218, 1.7));
+  const sun = new T.DirectionalLight(0xffffff, 1.5);
+  sun.position.set(-8, 16, 12);
+  scene.add(sun);
+
+  /* a piece of geometry styled by status: solid = built, see-through and dashed = not built */
+  function piece(geo, st, ac, mats, mix) {
+    const g = new T.Group(), base = col(C.card).lerp(col(ac), mix || (st === "built" ? 0.55 : 0.25));
+    if (st === "built") g.add(new T.Mesh(geo, new T.MeshLambertMaterial({ color: base })));
+    else g.add(new T.Mesh(geo, new T.MeshLambertMaterial({ color: base, transparent: true, opacity: st === "in_progress" ? 0.3 : 0.07, depthWrite: false })));
+    const em = st === "built" ? new T.LineBasicMaterial({ color: ac })
+      : new T.LineDashedMaterial({ color: ac, dashSize: st === "in_progress" ? 0.17 : 0.07, gapSize: 0.09, transparent: true, opacity: st === "in_progress" ? 0.9 : 0.7 });
+    const ln = new T.LineSegments(new T.EdgesGeometry(geo, 20), em);
+    if (st !== "built") ln.computeLineDistances();
+    g.add(ln);
+    if (mats) mats.push(em);
+    return g;
+  }
+  function shapeFor(n, r, st, ac, mats) {
+    const g = new T.Group(), cat = (n.category || "").toLowerCase(), det = (n.detail || "").toLowerCase();
+    const add = (geo, x, y, z, rx) => { const p = piece(geo, st, ac, mats); p.position.set(x, y, z); if (rx) p.rotation.x = rx; g.add(p); };
+    let top = 1.2;
+    if (/firewall|gateway/.test(cat)) { add(new T.BoxGeometry(0.36, 1.5, r.h * K * 0.84), 0, 0.75, 0); top = 1.5; }
+    else if (/laptop/.test(det)) { add(new T.BoxGeometry(1.6, 0.09, 1.1), 0, 0.045, 0.12); add(new T.BoxGeometry(1.6, 1.0, 0.07), 0, 0.55, -0.5, -0.22); top = 1.1; }
+    else if (/domain controller|server/.test(cat)) { add(new T.BoxGeometry(1.15, 2.1, 1.5), 0, 1.05, 0); top = 2.1; }
+    else if (/workstation|desktop|client/.test(cat)) { add(new T.BoxGeometry(0.8, 0.07, 0.5), 0, 0.035, 0); add(new T.BoxGeometry(0.14, 0.5, 0.14), 0, 0.32, 0); add(new T.BoxGeometry(1.55, 0.95, 0.09), 0, 1.02, 0); top = 1.5; }
+    else if (/cloud|edr/.test(cat)) { add(new T.BoxGeometry(0.1, 0.4, 0.1), 0, 0.2, 0); add(new T.IcosahedronGeometry(0.78, 0), 0, 1.1, 0); top = 1.9; }
+    else if (/data/.test(cat)) { for (let i = 0; i < 3; i++) add(new T.CylinderGeometry(0.7, 0.7, 0.3, 24), 0, 0.15 + i * 0.37, 0); top = 1.05; }
+    else if (/external|internet|service/.test(cat)) { add(new T.BoxGeometry(0.1, 0.35, 0.1), 0, 0.175, 0); add(new T.SphereGeometry(0.74, 14, 9), 0, 1.05, 0); top = 1.8; }
+    else { add(new T.BoxGeometry(1.2, 1.2, 1.2), 0, 0.6, 0); }
+    return { g, top };
+  }
+
+  /* platforms: one per zone */
+  const TH = 0.35;
+  for (const z of LAB.zones) {
+    const r = G.zones[z.id];
+    if (!r) continue;
+    const ac = zoneColor(z.id), geo = new T.BoxGeometry(r.w * K, TH, r.h * K);
+    const m = new T.Mesh(geo, new T.MeshLambertMaterial({ color: col(C.stage).lerp(col(ac), 0.1) }));
+    m.position.copy(P(r.x + r.w / 2, r.y + r.h / 2, -TH / 2));
+    const e = new T.LineSegments(new T.EdgesGeometry(geo), new T.LineBasicMaterial({ color: ac, transparent: true, opacity: 0.6 }));
+    e.position.copy(m.position);
+    scene.add(m, e);
+  }
+
+  /* labels are HTML laid over the canvas, so they always face the camera and stay sharp */
+  const labels = [], hintEl = $("#hint3");
+  function addLabel(node, pos, pri, align) { lwrap.append(node); const L = { el: node, pos, pri, align: align || "bc", w: 0, h: 0 }; labels.push(L); return L; }
+  for (const z of LAB.zones) {
+    const r = G.zones[z.id];
+    if (r) addLabel(el("div", { class: "l3 z3", style: "color:" + zoneColor(z.id), text: z.name }), P(r.x + 8, r.y + r.h, 0), 1, "tl");
+  }
+
+  /* nodes: a footprint (same rectangle as the 2D card) with a simple object standing on it */
+  const nodes3 = {}, picks = [], PADH = 0.06;
+  for (const n of LAB.nodes) {
+    const r = G.nodes[n.id];
+    if (!r) continue;
+    const st = stOf(n), ac = nodeColor(n), mats = [], grp = new T.Group(), bridge = zonesOf(n).length > 1;
+    const padT = bridge ? 0.24 : PADH, pad = piece(new T.BoxGeometry(r.w * K, padT, r.h * K), st, ac, mats, 0.12);
+    pad.position.y = PADH - padT / 2;
+    grp.add(pad);
+    const sh = shapeFor(n, r, st, ac, mats);
+    sh.g.position.y = PADH;
+    grp.add(sh.g);
+    const agentMats = {};
+    (n.agents || []).forEach((a, i, arr) => {
+      const am = [], p = piece(new T.BoxGeometry(0.34, 0.34, 0.34), stOf(a), ac, am);
+      p.position.set((i - (arr.length - 1) / 2) * 0.52 + 1.3, PADH + 0.17, r.h * K / 2 - 0.4);
+      grp.add(p);
+      agentMats[a.name] = { mats: am };
+    });
+    grp.position.copy(P(r.x + r.w / 2, r.y + r.h / 2, 0));
+    scene.add(grp);
+    const ph = sh.top + 0.3, pick = new T.Mesh(new T.BoxGeometry(r.w * K, ph, r.h * K));
+    pick.position.set(grp.position.x, ph / 2, grp.position.z);
+    pick.userData.id = n.id;
+    pick.updateMatrixWorld(true);
+    picks.push(pick);
+    const xtra = el("span", { class: "x", hidden: true });
+    const b = el("button", { type: "button", class: "l3 n3 s-" + st, "data-id": n.id, style: "--ac:" + ac, "aria-label": n.name + ", " + n.category + ", " + ST[st] + ". Show details." },
+      el("span", { class: "r" }, el("b", { text: n.name }), el("span", { class: "tag s-" + st, text: ST[st] })),
+      el("span", { class: "c", text: n.category }), xtra);
+    b.addEventListener("click", () => { if (drag.moved < 6) openNode(n.id, b); });
+    const L = addLabel(b, new T.Vector3(grp.position.x, PADH + sh.top + 0.25, grp.position.z), 0);
+    nodes3[n.id] = { mats, ac, label: L, xtra, agentMats };
+  }
+
+  /* flows: the same routes as the 2D lines, lying on the platforms */
+  const flows3 = {}, movers = [];
+  const dot = new T.SphereGeometry(0.06, 10, 8);
+  for (const f of LAB.flows) {
+    const FG = G.flows[f.id];
+    if (!FG) continue;
+    const st = stOf(f), ac = flowColor(f), mats = [];
+    for (const p of FG.parts) {
+      const pts = p.pts.map(q => P(q[0], q[1], LH));
+      const m = st === "built" ? new T.LineBasicMaterial({ color: ac })
+        : new T.LineDashedMaterial({ color: ac, dashSize: st === "in_progress" ? 0.2 : 0.08, gapSize: st === "in_progress" ? 0.11 : 0.12, transparent: true, opacity: st === "in_progress" ? 0.95 : 0.8 });
+      const ln = new T.Line(new T.BufferGeometry().setFromPoints(pts), m);
+      if (st !== "built") ln.computeLineDistances();
+      scene.add(ln);
+      mats.push({ m, src: p.src });
+      if (p.arrow) {
+        const a = pts[pts.length - 1], b = pts[pts.length - 2], dir = a.clone().sub(b).normalize();
+        const cone = new T.Mesh(new T.ConeGeometry(0.1, 0.3, 12), new T.MeshBasicMaterial(st === "built" ? { color: ac } : { color: ac, wireframe: true, transparent: true, opacity: 0.7 }));
+        cone.position.copy(a).addScaledVector(dir, -0.15);
+        cone.quaternion.setFromUnitVectors(new T.Vector3(0, 1, 0), dir);
+        scene.add(cone);
+      }
+      if (p.mark) {
+        const xm = new T.Group(), bm = new T.MeshBasicMaterial({ color: C.signal });
+        [Math.PI / 4, -Math.PI / 4].forEach(a => { const bar = new T.Mesh(new T.BoxGeometry(0.42, 0.05, 0.07), bm); bar.rotation.y = a; xm.add(bar); });
+        xm.position.copy(P(p.mark[0], p.mark[1], LH + 0.03));
+        scene.add(xm);
+      }
+    }
+    if (st === "built") {
+      for (const src of Object.keys(FG.legs)) {
+        const leg = FG.legs[src], pts = (leg.a || []).concat(leg.b || []).map(q => P(q[0], q[1], LH + 0.02));
+        if (pts.length < 2) continue;
+        const cum = [0];
+        for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + pts[i].distanceTo(pts[i - 1]));
+        const total = cum[cum.length - 1], count = Math.max(2, Math.round(total / 2.6));
+        for (let i = 0; i < count; i++) {
+          const mesh = new T.Mesh(dot, new T.MeshBasicMaterial({ color: col(ac).lerp(col("#ffffff"), 0.35) }));
+          scene.add(mesh);
+          movers.push({ mesh, pts, cum, total, off: i / count });
+        }
+      }
+    }
+    const L0 = FG.labels[0];
+    if (L0) {
+      const txt = f.port + (f.blocked ? ", " + f.carries.toLowerCase() : "") + (st === "built" ? "" : " (" + ST[st].toLowerCase() + ")");
+      addLabel(el("div", { class: "l3 f3", text: txt }), P(L0.x + (L0.anchor === "end" ? -50 : 50), L0.y, 0.25), 2);
+    }
+    flows3[f.id] = { mats, ac };
+  }
+  function placeOn(m, u) {
+    const d = u * m.total;
+    let i = 1;
+    while (i < m.cum.length - 1 && m.cum[i] < d) i++;
+    const seg = m.cum[i] - m.cum[i - 1], k = seg ? (d - m.cum[i - 1]) / seg : 0;
+    m.mesh.position.lerpVectors(m.pts[i - 1], m.pts[i], k);
+  }
+  movers.forEach(m => placeOn(m, m.off));
+  const token = new T.Mesh(new T.SphereGeometry(0.15, 16, 12), new T.MeshBasicMaterial({ color: C.signal }));
+  token.visible = false;
+  scene.add(token);
+
+  /* camera: orbit, zoom and pan */
+  const orb = { target: new T.Vector3(0, 0.3, 0), r: 30, th: -0.34, ph: 0.9, auto: !reduced(), th0: -0.34, sway: 0, rFit: 30 };
+  const hx = G.W / 2 * K, hz = G.H / 2 * K, corners = [];
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) for (const yy of [0, 2.6]) corners.push(new T.Vector3(sx * hx, yy, sz * hz));
+  const tmp = new T.Vector3();
+  function applyCam() {
+    const sp = Math.sin(orb.ph);
+    camera.position.set(orb.target.x + orb.r * sp * Math.sin(orb.th), orb.target.y + orb.r * Math.cos(orb.ph), orb.target.z + orb.r * sp * Math.cos(orb.th));
+    camera.lookAt(orb.target);
+    camera.updateMatrixWorld();
+  }
+  function fitRadius() {
+    let lo = 4, hi = 700;
+    for (let i = 0; i < 30; i++) {
+      orb.r = (lo + hi) / 2;
+      applyCam();
+      let ok = true;
+      for (const c of corners) { tmp.copy(c).project(camera); if (Math.abs(tmp.x) > 0.93 || tmp.y > 0.8 || tmp.y < -0.9) { ok = false; break; } }
+      if (ok) hi = orb.r; else lo = orb.r;
+    }
+    orb.r = hi; orb.rFit = hi;
+    applyCam();
+  }
+  function resetView() {
+    const portrait = camera.aspect < 1.05;
+    orb.th = orb.th0 = portrait ? -1.38 : -0.24;
+    orb.ph = portrait ? 0.6 : 0.86;
+    orb.target.set(0, 0.3, 0);
+    orb.sway = 0;
+    fitRadius();
+  }
+  let cw = 0, ch = 0, touched = false;
+  function measure() { labels.forEach(L => { L.w = L.el.offsetWidth; L.h = L.el.offsetHeight; }); }
+  function resize() {
+    const w = host.clientWidth, h = host.clientHeight;
+    if (!w || !h) return;
+    cw = w; ch = h;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    if (!touched) resetView(); else applyCam();
+    measure();
+  }
+  function stopAuto() { orb.auto = false; touched = true; }
+  function placeLabels() {
+    const placed = [], hit = (p, r) => p.l < r.r + 3 && p.r > r.l - 3 && p.t < r.b + 2 && p.b > r.t - 2;
+    const hr = hintEl.getBoundingClientRect(), cr = host.getBoundingClientRect();
+    placed.push({ l: hr.left - cr.left, r: hr.right - cr.left, t: hr.top - cr.top, b: hr.bottom - cr.top, pri: 9 });
+    for (const L of labels) {
+      tmp.copy(L.pos).project(camera);
+      L.sx = (tmp.x * 0.5 + 0.5) * cw; L.sy = (-tmp.y * 0.5 + 0.5) * ch; L.off = tmp.z > 1 || tmp.z < -1;
+    }
+    /* component labels are never hidden: where two would collide, the farther one is stacked above the nearer */
+    const order = labels.slice().sort((p, q) => p.pri - q.pri || q.sy - p.sy);
+    for (const L of order) {
+      let l = L.align === "tl" ? L.sx : L.sx - L.w / 2, t = L.align === "tl" ? L.sy + 4 : L.sy - L.h;
+      let hide = L.off;
+      if (!hide && L.pri === 0) {
+        l = clamp(l, 4, Math.max(4, cw - L.w - 4));
+        for (let k = 0; k < 6; k++) {
+          const r = { l, r: l + L.w, t, b: t + L.h }, c = placed.find(p => p.pri === 0 && hit(p, r));
+          if (!c) break;
+          t = c.t - L.h - 4;
+        }
+      }
+      const rect = { l, r: l + L.w, t, b: t + L.h, pri: L.pri };
+      if (!hide && L.pri > 0) hide = placed.some(p => hit(p, rect));
+      L.el.style.transform = "translate(" + l.toFixed(1) + "px," + t.toFixed(1) + "px)";
+      L.el.style.visibility = hide ? "hidden" : "visible";
+      if (!hide) placed.push(rect);
+    }
+  }
+
+  /* pointer, wheel and keyboard */
+  const drag = { moved: 0 }, ptrs = new Map();
+  let mode = null, pinch = 0;
+  const ray = new T.Raycaster(), ndc = new T.Vector2();
+  function pickAt(x, y) {
+    const r = canvas.getBoundingClientRect();
+    ndc.set(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(ndc, camera);
+    const hit = ray.intersectObjects(picks, false)[0];
+    return hit ? hit.object.userData.id : null;
+  }
+  function pan(dx, dy) {
+    const s = 2 * orb.r * Math.tan(camera.fov * Math.PI / 360) / ch;
+    const right = new T.Vector3().setFromMatrixColumn(camera.matrixWorld, 0), up = new T.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
+    orb.target.addScaledVector(right, -dx * s).addScaledVector(up, dy * s);
+    orb.target.x = clamp(orb.target.x, -hx, hx); orb.target.z = clamp(orb.target.z, -hz, hz); orb.target.y = clamp(orb.target.y, -1, 4);
+  }
+  function zoom(k) { orb.r = clamp(orb.r * k, 5, orb.rFit * 2.2); }
+  function onMove(e) {
+    const p = ptrs.get(e.pointerId);
+    if (!p) return;
+    const dx = e.clientX - p.x, dy = e.clientY - p.y;
+    p.x = e.clientX; p.y = e.clientY;
+    drag.moved += Math.abs(dx) + Math.abs(dy);
+    if (ptrs.size >= 2) {
+      const a = [...ptrs.values()], d = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y);
+      if (pinch) zoom(pinch / d);
+      pinch = d;
+      pan(dx / 2, dy / 2);
+    } else if (mode === "pan") pan(dx, dy);
+    else { orb.th -= dx * 0.006; orb.ph = clamp(orb.ph - dy * 0.006, 0.12, 1.5); }
+    if (drag.moved > 5) host.classList.add("dragging");
+    applyCam();
+  }
+  function onUp(e) {
+    const wasDrag = drag.moved >= 6, was = ptrs.size;
+    ptrs.delete(e.pointerId);
+    pinch = 0;
+    if (!ptrs.size) {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+      host.classList.remove("dragging");
+      if (!wasDrag && was === 1 && e.type === "pointerup" && e.target === canvas && mode === "rot") {
+        const id = pickAt(e.clientX, e.clientY);
+        if (id) openNode(id, nodes3[id].label.el);
+      }
+    }
+  }
+  host.addEventListener("pointerdown", e => {
+    if (e.button > 2) return;
+    if (!ptrs.size) {
+      drag.moved = 0;
+      mode = (e.button === 2 || e.button === 1 || e.shiftKey || e.ctrlKey || e.metaKey) ? "pan" : "rot";
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", onUp);
+    }
+    ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    stopAuto();
+  });
+  host.addEventListener("contextmenu", e => e.preventDefault());
+  host.addEventListener("wheel", e => {
+    e.preventDefault();
+    zoom(Math.exp((e.deltaMode === 1 ? e.deltaY * 30 : e.deltaY) * 0.0012));
+    stopAuto(); applyCam();
+  }, { passive: false });
+  canvas.addEventListener("pointermove", e => { if (!ptrs.size) canvas.style.cursor = pickAt(e.clientX, e.clientY) ? "pointer" : ""; });
+  host.addEventListener("keydown", e => {
+    const k = e.key;
+    let used = true;
+    if (k === "ArrowLeft" || k === "ArrowRight") { const s = k === "ArrowLeft" ? 1 : -1; if (e.shiftKey) pan(s * 40, 0); else orb.th += s * 0.12; }
+    else if (k === "ArrowUp" || k === "ArrowDown") { const s = k === "ArrowUp" ? 1 : -1; if (e.shiftKey) pan(0, s * 40); else orb.ph = clamp(orb.ph - s * 0.08, 0.12, 1.5); }
+    else if (k === "+" || k === "=") zoom(0.88);
+    else if (k === "-" || k === "_") zoom(1.14);
+    else if (k === "0" || k === "Home") resetView();
+    else used = false;
+    if (used) { e.preventDefault(); stopAuto(); applyCam(); }
+  });
+
+  /* highlight state shared with the 2D view */
+  function applyFocus3() {
+    const f = curFocus();
+    for (const id of Object.keys(nodes3)) {
+      const n3 = nodes3[id], on = !!f && f.nodes.has(id);
+      n3.mats.forEach(m => m.color.set(on ? "#ffffff" : n3.ac));
+      const b = n3.label.el;
+      b.classList.toggle("on", on);
+      b.classList.toggle("dim", !!f && !on);
+      b.classList.toggle("sel", !!selected && selected.type === "node" && selected.id === id);
+      let extra = "";
+      if (f && f.alert && siem && siem.id === id) extra = f.alert + " alert";
+      const ag = f ? f.agents.filter(a => a.node === id) : [];
+      if (ag.length) extra = ag.map(a => a.name).join(", ");
+      for (const name of Object.keys(n3.agentMats)) { const hit = ag.some(a => a.name === name); n3.agentMats[name].mats.forEach(m => m.color.set(hit ? C.signal : n3.ac)); }
+      if (n3.xtra.textContent !== extra) { n3.xtra.textContent = extra; n3.xtra.hidden = !extra; }
+    }
+    for (const id of Object.keys(flows3)) flows3[id].mats.forEach(x => x.m.color.set(partOn(f, id, x.src) ? "#ffffff" : flows3[id].ac));
+    measure();
+  }
+
+  let running = false, tPrev = 0, clock = 0;
+  function frame(t) {
+    if (!running) return;
+    const dt = Math.min(0.05, (t - tPrev) / 1000 || 0);
+    tPrev = t;
+    if (orb.auto && !reduced()) { orb.sway += dt; orb.th = orb.th0 + Math.sin(orb.sway * 0.26) * (camera.aspect < 1.05 ? 0.14 : 0.3); applyCam(); }
+    if (!reduced()) { clock += dt; movers.forEach(m => placeOn(m, (clock * 1.5 / m.total + m.off) % 1)); }
+    const xy = tokenXY(G);
+    token.visible = !!xy;
+    if (xy) token.position.copy(P(xy[0], xy[1], LH + 0.14));
+    renderer.render(scene, camera);
+    placeLabels();
+    requestAnimationFrame(frame);
+  }
+  const ro = new ResizeObserver(() => { if (!host.hidden) resize(); });
+  ro.observe(host);
+  $("#hint3").textContent = window.matchMedia("(pointer: coarse)").matches
+    ? "Drag to orbit. Pinch to zoom. Two fingers to pan."
+    : "Drag to orbit. Scroll to zoom. Right-drag or shift-drag to pan.";
+  return {
+    show() { resize(); applyFocus3(); if (!running) { running = true; tPrev = performance.now(); requestAnimationFrame(frame); } },
+    hide() { running = false; },
+    applyFocus: applyFocus3,
+    stopAuto,
+    reset() { resetView(); }
+  };
+}
+
+/* =====================================================================
+   12. START
+   ===================================================================== */
+function init() {
+  renderHeader(); renderChips(); renderLegend(); renderResults(); updateTourButtons();
+  pickLayout();
+  new ResizeObserver(() => { if (view === "2d") pickLayout(); }).observe($("#stage"));
+
+  $("#b2d").addEventListener("click", () => setView("2d"));
+  $("#b3d").addEventListener("click", () => setView("3d"));
+  $("#bPng").addEventListener("click", downloadPng);
+  $("#bSvg").addEventListener("click", downloadSvg);
+  $("#bReset").addEventListener("click", () => { if (V3.api) V3.api.reset(); });
+  for (const [id, kind] of [["bEvent", "event"], ["bInc", "incident"]]) {
+    const b = $("#" + id);
+    b.addEventListener("click", () => { if (b.getAttribute("aria-disabled") === "true") lockMessage(b); else startTour(kind, b); });
+  }
+  $("#tBack").addEventListener("click", () => goStep(tour.i - 1, true));
+  $("#tNext").addEventListener("click", () => goStep(tour.i + 1, true));
+  $("#tClose").addEventListener("click", () => stopTour(true));
+  $("#tPlay").addEventListener("click", () => {
+    if (tour.auto) { tour.auto = false; clearTimeout(tour.timer); syncTourBar(); }
+    else { tour.auto = true; goStep(tour.i === tour.steps.length - 1 ? 0 : tour.i + 1, false); }
+  });
+  document.addEventListener("keydown", e => {
+    if (e.key !== "Escape") return;
+    if (!panel.hidden) { closePanel(true); e.preventDefault(); }
+    else if (tour.kind) { stopTour(true); e.preventDefault(); }
+  });
+  document.addEventListener("visibilitychange", () => { if (V3.api && view === "3d") { if (document.hidden) V3.api.hide(); else V3.api.show(); } });
+  /* fetch Three.js once the page is idle, so the 3D toggle is instant and failure is known early */
+  if ("requestIdleCallback" in window) requestIdleCallback(init3D, { timeout: 2000 }); else setTimeout(init3D, 600);
+}
+init();
+</script>
+</body>
+</html>
