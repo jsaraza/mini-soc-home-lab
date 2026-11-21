@@ -23,6 +23,7 @@ The lab is isolated: no default gateway on either machine.
 ![CL01 ipconfig before](../../screenshots/phase1/cr-003-before-cl01-ipconfig.png)
 
 `Test-NetConnection 1.1.1.1 -Port 443` on AD-CL01 fails:
+
 ![CL01 no route before](../../screenshots/phase1/cr-003-before-cl01-tnc.png)
 
 
